@@ -6,7 +6,7 @@
 %%% Author:  Evgeniy Khramtsov <ekhramtsov@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -171,7 +171,7 @@ do_sub(S, {RegExp, New, Times}, Iter) ->
     end.
 
 replace_amps(String) ->
-    lists:map(
+    lists:flatmap(
       fun($&) -> "\\&";
-	 (Chr) -> Chr
+	 (Chr) -> [Chr]
       end, String).

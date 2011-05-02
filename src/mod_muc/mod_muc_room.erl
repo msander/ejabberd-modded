@@ -5,7 +5,7 @@
 %%% Created : 19 Mar 2003 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -832,9 +832,6 @@ process_groupchat_message(From, {xmlelement, "message", Attrs, _Els} = Packet,
 %% an implementation MAY allow users with certain privileges
 %% (e.g., a room owner, room admin, or service-level admin)
 %% to send messages to the room even if those users are not occupants.
-%%
-%% Check the mod_muc option access_message_nonparticipant and wether this JID
-%% is allowed or denied
 is_user_allowed_message_nonparticipant(JID, StateData) ->
     case get_service_affiliation(JID, StateData) of
 	owner ->
@@ -862,10 +859,17 @@ process_presence(From, Nick, {xmlelement, "presence", Attrs, _Els} = Packet,
 	    "unavailable" ->
 		case is_user_online(From, StateData) of
 		    true ->
+			NewPacket = case {(StateData#state.config)#config.allow_visitor_status,
+					  is_visitor(From, StateData)} of
+					{false, true} ->
+					    strip_status(Packet);
+					_ ->
+					    Packet
+				    end,
 			NewState =
-			    add_user_presence_un(From, Packet, StateData),
+			    add_user_presence_un(From, NewPacket, StateData),
 			send_new_presence(From, NewState),
-			Reason = case xml:get_subtag(Packet, "status") of
+			Reason = case xml:get_subtag(NewPacket, "status") of
 				false -> "";
 				Status_el -> xml:get_tag_cdata(Status_el)
 			end,
@@ -1617,19 +1621,28 @@ add_new_user(From, Nick, {xmlelement, _, Attrs, Els} = Packet, StateData) ->
 		      From, Err),
 		    StateData;
 		captcha_required ->
-		    ID = randoms:get_string(),
 		    SID = xml:get_attr_s("id", Attrs),
 		    RoomJID = StateData#state.jid,
 		    To = jlib:jid_replace_resource(RoomJID, Nick),
+                    Limiter = {From#jid.luser, From#jid.lserver},
 		    case ejabberd_captcha:create_captcha(
-			   ID, SID, RoomJID, To, Lang, From) of
-			{ok, CaptchaEls} ->
+			   SID, RoomJID, To, Lang, Limiter, From) of
+			{ok, ID, CaptchaEls} ->
 			    MsgPkt = {xmlelement, "message", [{"id", ID}], CaptchaEls},
 			    Robots = ?DICT:store(From,
 						 {Nick, Packet}, StateData#state.robots),
 			    ejabberd_router:route(RoomJID, From, MsgPkt),
 			    StateData#state{robots = Robots};
-			error ->
+                        {error, limit} ->
+                            ErrText = "Too many CAPTCHA requests",
+                            Err = jlib:make_error_reply(
+				    Packet, ?ERRT_RESOURCE_CONSTRAINT(Lang, ErrText)),
+                            ejabberd_router:route( % TODO: s/Nick/""/
+                              jlib:jid_replace_resource(
+				StateData#state.jid, Nick),
+			      From, Err),
+			    StateData;
+                        _ ->
 			    ErrText = "Unable to generate a captcha",
 			    Err = jlib:make_error_reply(
 				    Packet, ?ERRT_INTERNAL_SERVER_ERROR(Lang, ErrText)),
@@ -1681,7 +1694,24 @@ check_captcha(Affiliation, From, StateData) ->
 		{ok, passed} ->
 		    true;
 		_ ->
-		    captcha_required
+                    WList = (StateData#state.config)#config.captcha_whitelist,
+                    #jid{luser = U, lserver = S, lresource = R} = From,
+                    case ?SETS:is_element({U, S, R}, WList) of
+                        true ->
+                            true;
+                        false ->
+                            case ?SETS:is_element({U, S, ""}, WList) of
+                                true ->
+                                    true;
+                                false ->
+                                    case ?SETS:is_element({"", S, ""}, WList) of
+                                        true ->
+                                            true;
+                                        false ->
+                                            captcha_required
+                                    end
+                            end
+                    end
 	    end;
 	_ ->
 	    true
@@ -1879,10 +1909,18 @@ send_new_presence(NJID, Reason, StateData) ->
 			   false ->
 			       []
 		       end,
+	      Status2 = case ((StateData#state.config)#config.anonymous==false)
+			    andalso (NJID == Info#user.jid) of
+			    true ->
+				[{xmlelement, "status", [{"code", "100"}], []}
+				 | Status];
+			    false ->
+				Status
+			end,
 	      Packet = xml:append_subtags(
 			 Presence,
 			 [{xmlelement, "x", [{"xmlns", ?NS_MUC_USER}],
-			   [{xmlelement, "item", ItemAttrs, ItemEls} | Status]}]),
+			   [{xmlelement, "item", ItemAttrs, ItemEls} | Status2]}]),
 	      ejabberd_router:route(
 		jlib:jid_replace_resource(StateData#state.jid, Nick),
 		Info#user.jid,
@@ -2242,7 +2280,7 @@ process_admin_items_set(UJID, Items, Lang, StateData) ->
 					 case (SD#state.config)#config.members_only of
 					     true ->
 						 catch send_kickban_presence(
-							 JID, Reason, "321", SD),
+							 JID, Reason, "321", none, SD),
 						 SD1 = set_affiliation(JID, none, SD),
 						 set_role(JID, none, SD1);
 					     _ ->
@@ -2252,7 +2290,7 @@ process_admin_items_set(UJID, Items, Lang, StateData) ->
 					 end;
 				     {JID, affiliation, outcast, Reason} ->
 					 catch send_kickban_presence(
-						 JID, Reason, "301", SD),
+						 JID, Reason, "301", outcast, SD),
 					 set_affiliation_and_reason(
 					   JID, outcast, Reason,
 					   set_role(JID, none, SD));
@@ -2474,6 +2512,11 @@ can_change_ra(_FAffiliation, _FRole,
     %% participant that is already owner because he is MUC admin
     true;
 can_change_ra(_FAffiliation, _FRole,
+              _TAffiliation, _TRole,
+              _RoleorAffiliation, _Value, owner) ->
+    %% Nobody can decrease MUC admin's role/affiliation
+    false;
+can_change_ra(_FAffiliation, _FRole,
 	      TAffiliation, _TRole,
 	      affiliation, Value, _ServiceAf)
   when (TAffiliation == Value) ->
@@ -2614,6 +2657,10 @@ can_change_ra(_FAffiliation, _FRole,
 
 
 send_kickban_presence(JID, Reason, Code, StateData) ->
+    NewAffiliation = get_affiliation(JID, StateData),
+    send_kickban_presence(JID, Reason, Code, NewAffiliation, StateData).
+
+send_kickban_presence(JID, Reason, Code, NewAffiliation, StateData) ->
     LJID = jlib:jid_tolower(JID),
     LJIDs = case LJID of
 		{U, S, ""} ->
@@ -2639,19 +2686,25 @@ send_kickban_presence(JID, Reason, Code, StateData) ->
 			      ?DICT:find(J, StateData#state.users),
 			  add_to_log(kickban, {Nick, Reason, Code}, StateData),
 			  tab_remove_online_user(J, StateData),
-			  send_kickban_presence1(J, Reason, Code, StateData)
+			  send_kickban_presence1(J, Reason, Code, NewAffiliation, StateData)
 		  end, LJIDs).
 
-send_kickban_presence1(UJID, Reason, Code, StateData) ->
-    {ok, #user{jid = _RealJID,
+send_kickban_presence1(UJID, Reason, Code, Affiliation, StateData) ->
+    {ok, #user{jid = RealJID,
 	       nick = Nick}} =
 	?DICT:find(jlib:jid_tolower(UJID), StateData#state.users),
-    Affiliation = get_affiliation(UJID, StateData),
     SAffiliation = affiliation_to_list(Affiliation),
+    BannedJIDString = jlib:jid_to_string(RealJID),
     lists:foreach(
       fun({_LJID, Info}) ->
+	      JidAttrList = case (Info#user.role == moderator) orelse
+				((StateData#state.config)#config.anonymous
+				 == false) of
+				true -> [{"jid", BannedJIDString}];
+				false -> []
+			    end,
 	      ItemAttrs = [{"affiliation", SAffiliation},
-			   {"role", "none"}],
+			   {"role", "none"}] ++ JidAttrList,
 	      ItemEls = case Reason of
 			    "" ->
 				[];
@@ -2852,6 +2905,13 @@ is_password_settings_correct(XEl, StateData) ->
 -define(PRIVATEXFIELD(Label, Var, Val),
 	?XFIELD("text-private", Label, Var, Val)).
 
+-define(JIDMULTIXFIELD(Label, Var, JIDList),
+        {xmlelement, "field", [{"type", "jid-multi"},
+			       {"label", translate:translate(Lang, Label)},
+			       {"var", Var}],
+         [{xmlelement, "value", [], [{xmlcdata, jlib:jid_to_string(JID)}]}
+          || JID <- JIDList]}).
+
 get_default_room_maxusers(RoomState) ->
     DefRoomOpts = gen_mod:get_module_opt(RoomState#state.server_host, mod_muc, default_room_options, []),
     RoomState2 = set_opts(DefRoomOpts, RoomState),
@@ -2972,6 +3032,9 @@ get_config(Lang, StateData, From) ->
 			     Config#config.captcha_protected)];
 	    false -> []
 	end ++
+        [?JIDMULTIXFIELD("Exclude Jabber IDs from CAPTCHA challenge",
+                         "muc#roomconfig_captcha_whitelist",
+                         ?SETS:to_list(Config#config.captcha_whitelist))] ++
 	case mod_muc_log:check_access_log(
 	       StateData#state.server_host, From) of
 	    allow ->
@@ -3041,6 +3104,18 @@ set_config(XEl, StateData) ->
 -define(SET_STRING_XOPT(Opt, Val),
 	set_xoption(Opts, Config#config{Opt = Val})).
 
+-define(SET_JIDMULTI_XOPT(Opt, Vals),
+        begin
+            Set = lists:foldl(
+                    fun({U, S, R}, Set1) ->
+                            ?SETS:add_element({U, S, R}, Set1);
+                       (#jid{luser = U, lserver = S, lresource = R}, Set1) ->
+                            ?SETS:add_element({U, S, R}, Set1);
+                       (_, Set1) ->
+                            Set1
+                    end, ?SETS:empty(), Vals),
+            set_xoption(Opts, Config#config{Opt = Set})
+        end).
 
 set_xoption([], Config) ->
     Config;
@@ -3098,6 +3173,9 @@ set_xoption([{"muc#roomconfig_maxusers", [Val]} | Opts], Config) ->
     end;
 set_xoption([{"muc#roomconfig_enablelogging", [Val]} | Opts], Config) ->
     ?SET_BOOL_XOPT(logging, Val);
+set_xoption([{"muc#roomconfig_captcha_whitelist", Vals} | Opts], Config) ->
+    JIDs = [jlib:string_to_jid(Val) || Val <- Vals],
+    ?SET_JIDMULTI_XOPT(captcha_whitelist, JIDs);
 set_xoption([{"FORM_TYPE", _} | Opts], Config) ->
     %% Ignore our FORM_TYPE
     set_xoption(Opts, Config);
@@ -3167,6 +3245,7 @@ set_opts([{Opt, Val} | Opts], StateData) ->
 	      password -> StateData#state{config = (StateData#state.config)#config{password = Val}};
 	      anonymous -> StateData#state{config = (StateData#state.config)#config{anonymous = Val}};
 	      logging -> StateData#state{config = (StateData#state.config)#config{logging = Val}};
+              captcha_whitelist -> StateData#state{config = (StateData#state.config)#config{captcha_whitelist = ?SETS:from_list(Val)}};
 	      max_users ->
 		  ServiceMaxUsers = get_service_max_users(StateData),
 		  MaxUsers = if
@@ -3211,6 +3290,8 @@ make_opts(StateData) ->
      ?MAKE_CONFIG_OPT(anonymous),
      ?MAKE_CONFIG_OPT(logging),
      ?MAKE_CONFIG_OPT(max_users),
+     {captcha_whitelist,
+      ?SETS:to_list((StateData#state.config)#config.captcha_whitelist)},
      {affiliations, ?DICT:to_list(StateData#state.affiliations)},
      {subject, StateData#state.subject},
      {subject_author, StateData#state.subject_author}

@@ -77,7 +77,6 @@
 {"ejabberd Publish-Subscribe module","ejabberd Public-Abonada modulo"}.
 {"ejabberd SOCKS5 Bytestreams module","ejabberd SOCKS5 Bajtfluo modulo"}.
 {"ejabberd vCard module","ejabberd vCard-modulo"}.
-{"ejabberd virtual hosts","ejabberd virtual-gastigoj"}.
 {"ejabberd Web Admin","ejabberd Teksaĵa Administro"}.
 {"Elements","Eroj"}.
 {"Email","Retpoŝto"}.
@@ -362,6 +361,7 @@
 {"User","Uzanto"}.
 {"Validate","Validigu"}.
 {"vCard User Search","Serĉado de vizitkartoj"}.
+{"Virtual Hosts","Virtual-gastigoj"}.
 {"Visitors are not allowed to change their nicknames in this room","Ne estas permesata al vizitantoj ŝanĝi siajn kaŝnomojn en ĉi tiu ĉambro"}.
 {"Visitors are not allowed to send messages to all occupants","Vizitantoj ne rajtas sendi mesaĝojn al ĉiuj partoprenantoj"}.
 {"Wednesday","Merkredo"}.
@@ -371,7 +371,6 @@
 {"You must fill in field \"Nickname\" in the form","Vi devas kompletigi la \"Kaŝnomo\" kampon"}.
 {"You need an x:data capable client to configure mod_irc settings","Vi bezonas klienton kun x:data-funkcio por agordi mod_irc"}.
 {"You need an x:data capable client to configure room","Vi bezonas klienton kun x:data-funkcio por agordi la babilejon"}.
-{"You need an x:data capable client to register nickname","Vi bezonas klienton kun x:data-funkcio por registri kaŝnomon"}.
 {"You need an x:data capable client to search","Vi bezonas klienton kun x:data-funkcio por serĉado"}.
 {"Your contact offline message queue is full. The message has been discarded.","Mesaĝo-atendovico de la senkonekta kontakto estas plena. La mesaĝo estas forĵetita"}.
 {"Your messages to ~s are being blocked. To unblock them, visit ~s","Viaj mesaĝoj al ~s estas blokata. Por malbloki ilin, iru al ~s"}.

@@ -162,6 +162,7 @@
 			 captcha,
 			 http_bind,
 			 http_poll,
+			 %%register,
 			 web_admin
 			]}
 
@@ -169,10 +170,10 @@
 
 %%
 %% s2s_use_starttls: Enable STARTTLS + Dialback for S2S connections.
-%% Allowed values are: true or false.
+%% Allowed values are: false optional required required_trusted
 %% You must specify a certificate file.
 %%
-%%{s2s_use_starttls, true}.
+%%{s2s_use_starttls, optional}.
 
 %%
 %% s2s_certfile: Specify a certificate file.
@@ -474,10 +475,14 @@
 %%{captcha_cmd, "/lib/ejabberd/priv/bin/captcha.sh"}.
 
 %%
-%% Host part of the URL sent to the user.
+%% Host for the URL and port where ejabberd listens for CAPTCHA requests.
 %%
 %%{captcha_host, "example.org:5280"}.
 
+%%
+%% Limit CAPTCHA calls per minute for JID/IP to avoid DoS.
+%%
+%%{captcha_limit, 5}.
 
 %%%.   =======
 %%%'   MODULES
@@ -510,6 +515,7 @@
   %%{mod_muc_log,[]},
   {mod_offline,  [{access_max_user_messages, max_user_offline_messages}]},
   {mod_ping,     []},
+  %%{mod_pres_counter,[{count, 5}, {interval, 60}]},
   {mod_privacy,  []},
   {mod_private,  []},
   %%{mod_proxy65,[]},
@@ -521,6 +527,16 @@
 		  {plugins, ["flat", "hometree", "pep"]}  % pep requires mod_caps
 		 ]},
   {mod_register, [
+		  %%
+		  %% Protect In-Band account registrations with CAPTCHA.
+		  %%
+		  %%{captcha_protected, true},
+
+		  %%
+		  %% Set the minimum informational entropy for passwords.
+		  %%
+		  %%{password_strength, 32},
+
 		  %%
 		  %% After successful registration, the user receives
 		  %% a message with this subject and body.
@@ -534,8 +550,26 @@
 		  %%
 		  %%{registration_watchers, ["admin1@example.org"]},
 
+		  %%
+		  %% Only clients in the server machine can register accounts
+		  %%
+		  {ip_access, [{allow, "127.0.0.0/8"},
+			       {deny, "0.0.0.0/0"}]},
+
+		  %%
+		  %% Local c2s or remote s2s users cannot register accounts
+		  %%
+		  %%{access_from, deny},
+
 		  {access, register}
 		 ]},
+  %%{mod_register_web, [
+		  %%
+		  %% When a user registers, send a notification to
+		  %% these XMPP accounts.
+		  %%
+		  %%{registration_watchers, ["admin1@example.org"]}
+  %%		 ]},
   {mod_roster,   []},
   %%{mod_service_log,[]},
   {mod_shared_roster,[]},

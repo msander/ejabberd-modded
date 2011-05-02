@@ -77,7 +77,6 @@
 {"ejabberd Publish-Subscribe module","ejabberd Publish-Subscribe module"}.
 {"ejabberd SOCKS5 Bytestreams module","ejabberd SOCKS5 Bytestreams module"}.
 {"ejabberd vCard module","ejabberd's vCard-module"}.
-{"ejabberd virtual hosts","Virtuele hosts"}.
 {"ejabberd Web Admin","ejabberd Webbeheer"}.
 {"Elements","Elementen"}.
 {"Email","E-mail"}.
@@ -362,6 +361,7 @@
 {"Users Last Activity","Laatste activiteit van gebruikers"}.
 {"Validate","Bevestigen"}.
 {"vCard User Search","Gebruikers zoeken"}.
+{"Virtual Hosts","Virtuele hosts"}.
 {"Visitors are not allowed to change their nicknames in this room","Het is bezoekers niet toegestaan hun naam te veranderen in dit kanaal"}.
 {"Visitors are not allowed to send messages to all occupants","Bezoekers mogen geen berichten verzenden naar alle aanwezigen"}.
 {"Wednesday","Woensdag"}.
@@ -371,7 +371,6 @@
 {"You must fill in field \"Nickname\" in the form","U moet het veld \"bijnaam\" invullen"}.
 {"You need an x:data capable client to configure mod_irc settings","U hebt een client nodig die x:data ondersteunt om dit IRC-transport in te stellen"}.
 {"You need an x:data capable client to configure room","U hebt een client nodig die x:data ondersteunt om deze chatruimte in te stellen"}.
-{"You need an x:data capable client to register nickname","U hebt een client nodig die x:data ondersteunt om een bijnaam te registreren"}.
 {"You need an x:data capable client to search","U hebt een client nodig die x:data ondersteunt om te zoeken"}.
 {"Your contact offline message queue is full. The message has been discarded.","Te veel offline berichten voor dit contactpersoon. Het bericht is niet opgeslagen."}.
 {"Your messages to ~s are being blocked. To unblock them, visit ~s","Uw berichten aan ~s worden geblokkeerd. Om ze te deblokkeren, ga naar ~s"}.

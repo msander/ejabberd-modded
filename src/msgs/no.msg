@@ -77,7 +77,6 @@
 {"ejabberd Publish-Subscribe module","ejabberd Publish-Subscribe modul"}.
 {"ejabberd SOCKS5 Bytestreams module","ejabberd SOCKS5 Bytestreams modul"}.
 {"ejabberd vCard module","ejabberd vCard modul"}.
-{"ejabberd virtual hosts","virtuella ejabberd maskiner"}.
 {"ejabberd Web Admin","ejabberd Web Admin"}.
 {"Elements","Elementer"}.
 {"Email","Epost"}.
@@ -362,6 +361,7 @@
 {"Users Last Activity","Brukers Siste Aktivitet"}.
 {"Validate","Bekrefte gyldighet"}.
 {"vCard User Search","vCard Bruker Søk"}.
+{"Virtual Hosts","Virtuella Maskiner"}.
 {"Visitors are not allowed to change their nicknames in this room","Besøkende får ikke lov å endre kallenavn i dette "}.
 {"Visitors are not allowed to send messages to all occupants","Besøkende får ikke sende meldinger til alle deltakere"}.
 {"Wednesday","onsdag"}.
@@ -371,7 +371,6 @@
 {"You must fill in field \"Nickname\" in the form","Du må fylle inn feltet \"Nickname\" i skjemaet"}.
 {"You need an x:data capable client to configure mod_irc settings","Du trenger en x:data kompatibel klient for å konfigurere mod_irc instillinger"}.
 {"You need an x:data capable client to configure room","Du trenger en klient som støtter x:data for å "}.
-{"You need an x:data capable client to register nickname","Du trenger en klient som støtter x:data for å "}.
 {"You need an x:data capable client to search","Du tregner en klient som støtter x:data for å kunne "}.
 {"Your contact offline message queue is full. The message has been discarded.","Kontaktens frakoblede meldingskø er full. Meldingen har blitt kassert."}.
 {"Your messages to ~s are being blocked. To unblock them, visit ~s","Dine meldinger til ~s blir blokkert. For å åpne igjen, besøk ~s"}.

@@ -5,7 +5,7 @@
 %%% Created : 20 Dec 2002 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -28,7 +28,11 @@
 -author('alexey@process-one.net').
 
 -export([start/0, sha/1, sha1/1, sha224/1, sha256/1, sha384/1,
-	 sha512/1, md2/1]).
+	 sha512/1]).
+
+-ifdef(HAVE_MD2).
+-export([md2/1]).
+-endif.
 
 -include("ejabberd.hrl").
 
@@ -80,8 +84,10 @@ sha384(Text) ->
 sha512(Text) ->
     erlang:port_control(?DRIVER, 512, Text).
 
+-ifdef(HAVE_MD2).
 md2(Text) ->
     erlang:port_control(?DRIVER, 2, Text).
+-endif.
 
 driver_path() ->
     Suffix = case os:type() of

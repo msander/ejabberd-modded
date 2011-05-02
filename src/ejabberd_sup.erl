@@ -5,7 +5,7 @@
 %%% Created : 31 Jan 2003 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -184,6 +184,13 @@ init([]) ->
 	 infinity,
 	 supervisor,
 	 [ejabberd_tmp_sup]},
+    CacheTabSupervisor =
+	{cache_tab_sup,
+	 {cache_tab_sup, start_link, []},
+	 permanent,
+	 infinity,
+	 supervisor,
+	 [cache_tab_sup]},
     {ok, {{one_for_one, 10, 1},
 	  [Hooks,
 	   NodeGroups,
@@ -204,6 +211,7 @@ init([]) ->
 	   IQSupervisor,
 	   STUNSupervisor,
 	   FrontendSocketSupervisor,
+	   CacheTabSupervisor,
 	   Listener]}}.
 
 

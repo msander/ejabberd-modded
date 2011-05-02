@@ -5,7 +5,7 @@
 %%% Created : 11 Jan 2004 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -740,6 +740,10 @@ print_usage_command(Cmd, C, MaxC, ShCode) ->
 		      end,
 
     ?PRINT(["\n", NameFmt, "\n", ArgsFmt, "\n", ReturnsFmt, "\n\n", XmlrpcFmt, TagsFmt, "\n\n", DescFmt, "\n\n", LongDescFmt, NoteEjabberdctl], []).
+
+format_usage_ctype(Type, _Indentation)
+  when (Type==atom) or (Type==integer) or (Type==string) or (Type==rescode) or (Type==restuple)->
+    io_lib:format("~p", [Type]);
 
 format_usage_ctype({Name, Type}, _Indentation)
   when (Type==atom) or (Type==integer) or (Type==string) or (Type==rescode) or (Type==restuple)->

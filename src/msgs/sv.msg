@@ -72,7 +72,6 @@
 {"ejabberd Publish-Subscribe module","ejabberd publikprenumerations modul"}.
 {"ejabberd SOCKS5 Bytestreams module","ejabberd SOCKS5 Bytestrem modul"}.
 {"ejabberd vCard module","ejabberd vCard-modul"}.
-{"ejabberd virtual hosts","Virtuella ejabberd-servrar"}.
 {"ejabberd Web Admin","ejabberd Web Admin"}.
 {"Elements","Elements"}.
 {"Email","Email"}.
@@ -348,6 +347,7 @@
 {"Users Last Activity","Användarens senaste aktivitet"}.
 {"Validate","Validera"}.
 {"vCard User Search","vCard användare sök"}.
+{"Virtual Hosts","Virtuella servrar"}.
 {"Visitors are not allowed to change their nicknames in this room","Det är inte tillåtet for gäster att ändra sina smeknamn i detta rummet"}.
 {"Visitors are not allowed to send messages to all occupants","Besökare får inte skicka medelande till alla"}.
 {"Wednesday","Onsdag"}.
@@ -357,7 +357,6 @@
 {"You must fill in field \"Nickname\" in the form","Du måste fylla i fält \"smeknamn\" i formen"}.
 {"You need an x:data capable client to configure mod_irc settings","Du behöer en klient som stöjer x:data för att konfigurera mod_irc"}.
 {"You need an x:data capable client to configure room","Du behöver en klient som stödjer x:data för att konfiguera detta rum"}.
-{"You need an x:data capable client to register nickname","Du behöver en klient som stödjer x:data för att registrera smeknamn"}.
 {"You need an x:data capable client to search","Du behöver en klient som stödjer x:data, för att kunna söka"}.
 {"Your contact offline message queue is full. The message has been discarded.","Din kontaktkö for offlinekontakter ar full"}.
 {"Your messages to ~s are being blocked. To unblock them, visit ~s","Dina meddelanden till ~s är blockerade. För att avblockera dem, gå till ~s"}.

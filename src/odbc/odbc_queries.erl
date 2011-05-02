@@ -5,7 +5,7 @@
 %%% Created : by Mickael Remond <mremond@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -90,6 +90,8 @@
 -define(generic, true).
 -endif.
 
+-include("ejabberd.hrl").
+
 %% Almost a copy of string:join/2.
 %% We use this version because string:join/2 is relatively
 %% new function (introduced in R12B-0).
@@ -121,6 +123,23 @@ update_t(Table, Fields, Vals, Where) ->
 	       ") values ('", join(Vals, "', '"), "');"])
     end.
 
+update(LServer, Table, Fields, Vals, Where) ->
+    UPairs = lists:zipwith(fun(A, B) -> A ++ "='" ++ B ++ "'" end,
+			   Fields, Vals),
+    case ejabberd_odbc:sql_query(
+	   LServer,
+	   ["update ", Table, " set ",
+	    join(UPairs, ", "),
+	    " where ", Where, ";"]) of
+	{updated, 1} ->
+	    ok;
+	_ ->
+	    ejabberd_odbc:sql_query(
+	      LServer,
+	      ["insert into ", Table, "(", join(Fields, ", "),
+	       ") values ('", join(Vals, "', '"), "');"])
+    end.
+
 %% F can be either a fun or a list of queries
 %% TODO: We should probably move the list of queries transaction
 %% wrapper from the ejabberd_odbc module to this one (odbc_queries)
@@ -134,14 +153,9 @@ get_last(LServer, Username) ->
        "where username='", Username, "'"]).
 
 set_last_t(LServer, Username, Seconds, State) ->
-    %% MREMOND: I think this should be turn into a non transactional behaviour
-    ejabberd_odbc:sql_transaction(
-      LServer,
-      fun() ->
-	      update_t("last", ["username", "seconds", "state"],
-		       [Username, Seconds, State],
-		       ["username='", Username, "'"])
-      end).
+    update(LServer, "last", ["username", "seconds", "state"],
+	   [Username, Seconds, State],
+	   ["username='", Username, "'"]).
 
 del_last(LServer, Username) ->
     ejabberd_odbc:sql_query(
@@ -870,8 +884,14 @@ count_records_where(LServer, Table, WhereClause) ->
       ["select count(*) from ", Table, " with (nolock) ", WhereClause]).
 
 get_roster_version(LServer, LUser) ->
-	ejabberd_odbc:sql_query(LServer, 
-		["select version from dbo.roster_version with (nolock) where username = '", LUser, "'"]).
-set_roster_version(LUser, Version) ->
-	update_t("dbo.roster_version", ["username", "version"], [LUser, Version], ["username = '", LUser, "'"]).
+    ejabberd_odbc:sql_query(
+      LServer,
+      ["EXECUTE dbo.get_roster_version '", LUser, "'"]).
+
+set_roster_version(Username, Version) ->
+    %% This function doesn't know the vhost, so we hope it's the first one defined:
+    LServer = ?MYNAME,
+    ejabberd_odbc:sql_query(
+      LServer,
+      ["EXECUTE dbo.set_roster_version '", Username, "', '", Version, "'"]).
 -endif.

@@ -5,7 +5,7 @@
 %%% Created : 21 Jul 2003 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -392,12 +392,13 @@ process_list_set(LUser, LServer, {value, Name}, Els) ->
 		{atomic, {error, _} = Error} ->
 		    Error;
 		{atomic, {result, _} = Res} ->
+		    NeedDb = is_list_needdb(List),
 		    ejabberd_router:route(
 		      jlib:make_jid(LUser, LServer, ""),
 		      jlib:make_jid(LUser, LServer, ""),
 		      {xmlelement, "broadcast", [],
 		       [{privacy_list,
-			 #userlist{name = Name, list = List},
+			 #userlist{name = Name, list = List, needdb = NeedDb},
 			 Name}]}),
 		    Res;
 		_ ->

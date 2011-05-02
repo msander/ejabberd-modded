@@ -5,7 +5,7 @@
 %%% Created :  4 Mar 2004 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -272,7 +272,13 @@ handle_event(_Event, StateName, StateData) ->
 %%          {stop, Reason, Reply, NewStateData}                    
 %%----------------------------------------------------------------------
 handle_sync_event({send, Packet}, _From, StateName, StateData) ->
-    Output = StateData#state.output ++ [lists:flatten(Packet)],
+    Packet2 = if
+		  is_binary(Packet) ->
+		      binary_to_list(Packet);
+		  true ->
+		      Packet
+	      end,
+    Output = StateData#state.output ++ [lists:flatten(Packet2)],
     Reply = ok,
     {reply, Reply, StateName, StateData#state{output = Output}};
 

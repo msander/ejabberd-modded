@@ -77,7 +77,6 @@
 {"ejabberd Publish-Subscribe module","Mòdul ejannerd Publicar-Subscriure"}.
 {"ejabberd SOCKS5 Bytestreams module","mòdul ejabberd SOCKS5 Bytestreams"}.
 {"ejabberd vCard module","Mòdul ejabberd vCard"}.
-{"ejabberd virtual hosts","Hosts virtuals del ejabberd"}.
 {"ejabberd Web Admin","Web d'administració del ejabberd"}.
 {"Elements","Elements"}.
 {"Email","Email"}.
@@ -362,6 +361,7 @@
 {"User","Usuari"}.
 {"Validate","Validar"}.
 {"vCard User Search","Recerca de vCard d'usuari"}.
+{"Virtual Hosts","Hosts virtuals"}.
 {"Visitors are not allowed to change their nicknames in this room","Els visitants no tenen permés canviar el seus Nicknames en esta sala"}.
 {"Visitors are not allowed to send messages to all occupants","Els visitants no poden enviar missatges a tots els ocupants"}.
 {"Wednesday","Dimecres"}.
@@ -371,7 +371,6 @@
 {"You must fill in field \"Nickname\" in the form","Deus d'omplir el camp \"Nickname\" al formulari"}.
 {"You need an x:data capable client to configure mod_irc settings","Necessites un client amb suport x:data per a configurar les opcions de mod_irc"}.
 {"You need an x:data capable client to configure room","Necessites un client amb suport x:data per a configurar la sala"}.
-{"You need an x:data capable client to register nickname","Necessites un client amb suport x:data per a poder registrar el Nickname"}.
 {"You need an x:data capable client to search","Necesites un client amb suport x:data per a poder buscar"}.
 {"Your contact offline message queue is full. The message has been discarded.","La cua de missatges offline és plena. El missatge ha sigut descartat"}.
 {"Your messages to ~s are being blocked. To unblock them, visit ~s","Els teus missatges per ~s s'estan bloquejant. Per desbloquejar-los, visita ~s"}.

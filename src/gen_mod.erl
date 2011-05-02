@@ -5,7 +5,7 @@
 %%% Created : 24 Jan 2003 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -66,13 +66,13 @@ start_module(Host, Module, Opts) ->
     ets:insert(ejabberd_modules,
 	       #ejabberd_module{module_host = {Module, Host},
 				opts = Opts}),
-    case catch Module:start(Host, Opts) of
-	{'EXIT', Reason} ->
+    try Module:start(Host, Opts)
+    catch Class:Reason ->
 	    del_module_mnesia(Host, Module),
 	    ets:delete(ejabberd_modules, {Module, Host}),
-	    ?ERROR_MSG("~p", [Reason]);
-	_ ->
-	    ok
+	    ?ERROR_MSG("Problem starting the module ~p for host ~p with options:~n  ~p~n  ~p: ~p",
+		    [Module, Host, Opts, Class, Reason]),
+	    erlang:raise(Class, Reason, erlang:get_stacktrace())
     end.
 
 %% @doc Stop the module in a host, and forget its configuration.

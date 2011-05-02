@@ -66,7 +66,6 @@
 {"ejabberd Publish-Subscribe module","ejabberd Publish-Subscribe module"}.
 {"ejabberd SOCKS5 Bytestreams module","ejabberd SOCKS5 Bytestreams module"}.
 {"ejabberd vCard module","ejabberd vCard module"}.
-{"ejabberd virtual hosts","โฮสต์เสมือน ejabberd"}.
 {"Email","อีเมล"}.
 {"Enable logging","เปิดใช้งานการบันทึก"}.
 {"End User Session","สิ้นสุดเซสชันของผู้ใช้"}.
@@ -297,6 +296,7 @@
 {"Users Last Activity","กิจกรรมล่าสุดของผู้ใช้"}.
 {"Validate","ตรวจสอบ"}.
 {"vCard User Search","ค้นหาผู้ใช้ vCard "}.
+{"Virtual Hosts","โฮสต์เสมือน"}.
 {"Visitors are not allowed to send messages to all occupants","ผู้เยี่ยมเยือนไม่ได้รับอนุญาตให้ส่งข้อความถึงผู้ครอบครองห้องทั้งหมด"}.
 {"Wednesday","วันพุธ"}.
 {"When to send the last published item","เวลาที่ส่งรายการที่เผยแพร่ครั้งล่าสุด"}.
@@ -305,6 +305,5 @@
 {"You must fill in field \"Nickname\" in the form","คุณต้องกรอกฟิลด์ \"Nickname\" ในแบบฟอร์ม"}.
 {"You need an x:data capable client to configure mod_irc settings","คุณต้องใช้ไคลเอ็นต์ที่รองรับ x:data เพื่อกำหนดการตั้งค่า mod_irc"}.
 {"You need an x:data capable client to configure room","คุณต้องใช้ไคลเอ็นต์ที่รองรับ x:data เพื่อกำหนดค่าห้องสนทนา "}.
-{"You need an x:data capable client to register nickname","คุณต้องใช้ไคลเอ็นต์ที่รองรับ x:data เพื่อลงทะเบียนชื่อเล่น"}.
 {"You need an x:data capable client to search","คุณต้องใช้ไคลเอ็นต์ที่รองรับ x:data เพื่อค้นหา"}.
 {"Your contact offline message queue is full. The message has been discarded.","ลำดับข้อความออฟไลน์ของผู้ที่ติดต่อของคุณเต็มแล้ว ข้อความถูกลบทิ้งแล้ว"}.

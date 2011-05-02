@@ -66,7 +66,6 @@
 {"ejabberd Publish-Subscribe module","Môdun ejabberd Xuất Bản-Đăng Ký Bản quyền"}.
 {"ejabberd SOCKS5 Bytestreams module","Môdun SOCKS5 Bytestreams Bản quyền"}.
 {"ejabberd vCard module","Môdun ejabberd vCard Bản quyền"}.
-{"ejabberd virtual hosts","Máy chủ ảo ejabberd"}.
 {"Email","Email"}.
 {"Enable logging","Cho phép ghi nhật ký"}.
 {"End User Session","Kết Thúc Phiên Giao Dịch Người Sử Dụng"}.
@@ -297,6 +296,7 @@
 {"Users","Người sử dụng"}.
 {"Validate","Xác nhận hợp lệ"}.
 {"vCard User Search","Tìm Kiếm Người Sử Dụng vCard"}.
+{"Virtual Hosts","Máy Chủ Ảo"}.
 {"Visitors are not allowed to send messages to all occupants","Người ghé thăm không được phép gửi thư đến tất cả các người tham dự"}.
 {"Wednesday","Thứ Tư"}.
 {"When to send the last published item","Khi cần gửi mục được xuất bản cuối cùng"}.
@@ -305,6 +305,5 @@
 {"You must fill in field \"Nickname\" in the form","Bạn phải điền thông tin vào ô \"Nickname\" trong biểu mẫu này"}.
 {"You need an x:data capable client to configure mod_irc settings","Bạn cần có một trình ứng dụng khách hỗ trợ định dạng dữ liệu x: để xác định các thiết lập mod_irc"}.
 {"You need an x:data capable client to configure room","Bạn cần có một trình ứng dụng khách hỗ trợ định dạng dữ liệu x: để xác định cấu hình phòng họp"}.
-{"You need an x:data capable client to register nickname","Bạn cần có một trình ứng dụng khách hỗ trợ định dạng dữ liệu x: để đăng ký bí danh"}.
 {"You need an x:data capable client to search","Bạn cần có một trình ứng dụng khách hỗ trợ định dạng dữ liệu x: để tìm kiếm"}.
 {"Your contact offline message queue is full. The message has been discarded.","Danh sách chờ thư liên lạc ngoại tuyến của bạn đã đầy. Thư này đã bị loại bỏ."}.

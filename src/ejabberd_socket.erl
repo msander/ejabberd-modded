@@ -5,7 +5,7 @@
 %%% Created : 23 Aug 2006 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -87,7 +87,13 @@ start(Module, SockMod, Socket, Opts) ->
 		    end,
 		    ReceiverMod:become_controller(Receiver, Pid);
 		{error, _Reason} ->
-		    SockMod:close(Socket)
+		    SockMod:close(Socket),
+		    case ReceiverMod of
+			ejabberd_receiver ->
+			    ReceiverMod:close(Receiver);
+			_ ->
+			    ok
+		    end
 	    end;
 	independent ->
 	    ok;

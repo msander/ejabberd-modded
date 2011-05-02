@@ -77,7 +77,6 @@
 {"ejabberd Publish-Subscribe module","Modulo Pubblicazione/Iscrizione (PubSub) per ejabberd"}.
 {"ejabberd SOCKS5 Bytestreams module","Modulo SOCKS5 Bytestreams per ejabberd"}.
 {"ejabberd vCard module","Modulo vCard per ejabberd"}.
-{"ejabberd virtual hosts","Host virtuali di ejabberd"}.
 {"ejabberd Web Admin","Amministrazione web ejabberd"}.
 {"Elements","Elementi"}.
 {"Email","E-mail"}.
@@ -362,6 +361,7 @@
 {"User","Utente"}.
 {"Validate","Validare"}.
 {"vCard User Search","Ricerca di utenti per vCard"}.
+{"Virtual Hosts","Host Virtuali"}.
 {"Visitors are not allowed to change their nicknames in this room","Non è consentito ai visitatori cambiare il nickname in questa stanza"}.
 {"Visitors are not allowed to send messages to all occupants","Non è consentito ai visitatori l'invio di messaggi a tutti i presenti"}.
 {"Wednesday","Mercoledì"}.
@@ -371,7 +371,6 @@
 {"You must fill in field \"Nickname\" in the form","Si deve riempire il campo \"Nickname\" nel modulo"}.
 {"You need an x:data capable client to configure mod_irc settings","Per la configurazione del modulo IRC è necessario un client che supporti x:data"}.
 {"You need an x:data capable client to configure room","Per la configurazione della stanza è necessario un client che supporti x:data"}.
-{"You need an x:data capable client to register nickname","Per registrare un nickname è necessario un client che supportix:data"}.
 {"You need an x:data capable client to search","Per effettuare ricerche è necessario un client che supporti x:data"}.
 {"Your contact offline message queue is full. The message has been discarded.","La coda dei messaggi offline del contatto è piena. Il messaggio è stato scartato"}.
 {"Your messages to ~s are being blocked. To unblock them, visit ~s","I messaggi verso ~s sono bloccati. Per sbloccarli, visitare ~s"}.

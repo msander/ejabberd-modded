@@ -5,7 +5,7 @@
 %%% Created : 19 Mar 2003 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -708,7 +708,7 @@ iq_get_register_info(Host, From, Lang) ->
 	[{xmlelement, "instructions", [],
 	  [{xmlcdata,
 	    translate:translate(
-	      Lang, "You need an x:data capable client to register nickname")}]},
+	      Lang, "You need a client that supports x:data to register the nickname")}]},
 	 {xmlelement, "x",
 	  [{"xmlns", ?NS_XDATA}],
 	  [{xmlelement, "title", [],
@@ -805,7 +805,7 @@ iq_get_vcard(Lang) ->
       [{xmlcdata, ?EJABBERD_URI}]},
      {xmlelement, "DESC", [],
       [{xmlcdata, translate:translate(Lang, "ejabberd MUC module") ++
-	  "\nCopyright (c) 2003-2010 Alexey Shchepin"}]}].
+	  "\nCopyright (c) 2003-2011 ProcessOne"}]}].
 
 
 broadcast_service_message(Host, Msg) ->

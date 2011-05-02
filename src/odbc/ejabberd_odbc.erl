@@ -5,7 +5,7 @@
 %%% Created :  8 Dec 2004 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -483,7 +483,7 @@ pgsql_to_odbc({ok, PGSQLResult}) ->
 	    [pgsql_item_to_odbc(Item) || Item <- Items]
     end.
 
-pgsql_item_to_odbc({"SELECT", Rows, Recs}) ->
+pgsql_item_to_odbc({"SELECT" ++ _, Rows, Recs}) ->
     {selected,
      [element(1, Row) || Row <- Rows],
      [list_to_tuple(Rec) || Rec <- Recs]};

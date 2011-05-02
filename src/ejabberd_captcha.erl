@@ -5,7 +5,7 @@
 %%% Created : 26 Apr 2008 by Evgeniy Khramtsov <xramtsov@gmail.com>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -36,7 +36,8 @@
 	 terminate/2, code_change/3]).
 
 -export([create_captcha/6, build_captcha_html/2, check_captcha/2,
-	 process_reply/1, process/2, is_feature_available/0]).
+	 process_reply/1, process/2, is_feature_available/0,
+	 create_captcha_x/5, create_captcha_x/6]).
 
 -include("jlib.hrl").
 -include("ejabberd.hrl").
@@ -48,8 +49,9 @@
 
 -define(CAPTCHA_TEXT(Lang), translate:translate(Lang, "Enter the text you see")).
 -define(CAPTCHA_LIFETIME, 120000). % two minutes
+-define(LIMIT_PERIOD, 60*1000*1000). % one minute
 
--record(state, {}).
+-record(state, {limits = treap:empty()}).
 -record(captcha, {id, pid, key, tref, args}).
 
 -define(T(S),
@@ -71,11 +73,12 @@
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
-create_captcha(Id, SID, From, To, Lang, Args)
-  when is_list(Id), is_list(Lang), is_list(SID),
+create_captcha(SID, From, To, Lang, Limiter, Args)
+  when is_list(Lang), is_list(SID),
        is_record(From, jid), is_record(To, jid) ->
-    case create_image() of
+    case create_image(Limiter) of
 	{ok, Type, Key, Image} ->
+            Id = randoms:get_string(),
 	    B64Image = jlib:encode_base64(binary_to_list(Image)),
 	    JID = jlib:jid_to_string(From),
 	    CID = "sha1+" ++ sha:sha(Image) ++ "@bob.xmpp.org",
@@ -91,7 +94,8 @@ create_captcha(Id, SID, From, To, Lang, Args)
 		    ?VFIELD("hidden", "challenge", {xmlcdata, Id}),
 		    ?VFIELD("hidden", "sid", {xmlcdata, SID}),
 		    {xmlelement, "field", [{"var", "ocr"}, {"label", ?CAPTCHA_TEXT(Lang)}],
-		     [{xmlelement, "media", [{"xmlns", ?NS_MEDIA}],
+                     [{xmlelement, "required", [], []},
+		      {xmlelement, "media", [{"xmlns", ?NS_MEDIA}],
 		       [{xmlelement, "uri", [{"type", Type}],
 			 [{xmlcdata, "cid:" ++ CID}]}]}]}]}]},
 	    BodyString1 = translate:translate(Lang, "Your messages to ~s are being blocked. To unblock them, visit ~s"),
@@ -104,12 +108,61 @@ create_captcha(Id, SID, From, To, Lang, Args)
 	    case ?T(mnesia:write(#captcha{id=Id, pid=self(), key=Key,
 					  tref=Tref, args=Args})) of
 		ok ->
-		    {ok, [Body, OOB, Captcha, Data]};
-		_Err ->
-		    error
+		    {ok, Id, [Body, OOB, Captcha, Data]};
+		Err ->
+		    {error, Err}
 	    end;
-	_Err ->
-	    error
+	Err ->
+	    Err
+    end.
+
+create_captcha_x(SID, To, Lang, Limiter, HeadEls) ->
+    create_captcha_x(SID, To, Lang, Limiter, HeadEls, []).
+
+create_captcha_x(SID, To, Lang, Limiter, HeadEls, TailEls) ->
+    case create_image(Limiter) of
+	{ok, Type, Key, Image} ->
+	    Id = randoms:get_string(),
+	    B64Image = jlib:encode_base64(binary_to_list(Image)),
+	    CID = "sha1+" ++ sha:sha(Image) ++ "@bob.xmpp.org",
+	    Data = {xmlelement, "data",
+		    [{"xmlns", ?NS_BOB}, {"cid", CID},
+		     {"max-age", "0"}, {"type", Type}],
+		    [{xmlcdata, B64Image}]},
+            HelpTxt = translate:translate(
+                                Lang,
+                                 "If you don't see the CAPTCHA image here, "
+                                 "visit the web page."),
+	    Imageurl = get_url(Id ++ "/image"),
+	    Captcha =
+		{xmlelement, "x", [{"xmlns", ?NS_XDATA}, {"type", "form"}],
+		 [?VFIELD("hidden", "FORM_TYPE", {xmlcdata, ?NS_CAPTCHA}) | HeadEls] ++
+		 [{xmlelement, "field", [{"type", "fixed"}],
+		   [{xmlelement, "value", [], [{xmlcdata, HelpTxt}]}]},
+		  {xmlelement, "field", [{"type", "hidden"}, {"var", "captchahidden"}],
+		   [{xmlelement, "value", [], [{xmlcdata, "workaround-for-psi"}]}]},
+		  {xmlelement, "field",
+		   [{"type", "text-single"},
+		    {"label", translate:translate(Lang, "CAPTCHA web page")},
+		    {"var", "url"}],
+		   [{xmlelement, "value", [], [{xmlcdata, Imageurl}]}]},
+		  ?VFIELD("hidden", "from", {xmlcdata, jlib:jid_to_string(To)}),
+		  ?VFIELD("hidden", "challenge", {xmlcdata, Id}),
+		  ?VFIELD("hidden", "sid", {xmlcdata, SID}),
+		  {xmlelement, "field", [{"var", "ocr"}, {"label", ?CAPTCHA_TEXT(Lang)}],
+                   [{xmlelement, "required", [], []},
+		    {xmlelement, "media", [{"xmlns", ?NS_MEDIA}],
+		     [{xmlelement, "uri", [{"type", Type}],
+		       [{xmlcdata, "cid:" ++ CID}]}]}]}] ++ TailEls},
+	    Tref = erlang:send_after(?CAPTCHA_LIFETIME, ?MODULE, {remove_id, Id}),
+	    case ?T(mnesia:write(#captcha{id=Id, key=Key, tref=Tref})) of
+		ok ->
+		    {ok, [Captcha, Data]};
+		Err ->
+		    {error, Err}
+	    end;
+        Err ->
+	    Err
     end.
 
 %% @spec (Id::string(), Lang::string()) -> {FormEl, {ImgEl, TextEl, IdEl, KeyEl}} | captcha_not_found
@@ -155,10 +208,18 @@ check_captcha(Id, ProvidedKey) ->
 	       mnesia:delete({captcha, Id}),
 	       erlang:cancel_timer(Tref),
 	       if StoredKey == ProvidedKey ->
-		       Pid ! {captcha_succeed, Args},
+		       if is_pid(Pid) ->
+			       Pid ! {captcha_succeed, Args};
+			  true ->
+			       ok
+		       end,
 		       captcha_valid;
 		  true ->
-		       Pid ! {captcha_failed, Args},
+		       if is_pid(Pid) ->
+			       Pid ! {captcha_failed, Args};
+			  true ->
+			       ok
+		       end,
 		       captcha_non_valid
 	       end;
 	   _ ->
@@ -166,24 +227,32 @@ check_captcha(Id, ProvidedKey) ->
        end).
 
 
-process_reply({xmlelement, "captcha", _, _} = El) ->
+process_reply({xmlelement, _, _, _} = El) ->
     case xml:get_subtag(El, "x") of
 	false ->
 	    {error, malformed};
 	Xdata ->
 	    Fields = jlib:parse_xdata_submit(Xdata),
-	    case {proplists:get_value("challenge", Fields),
-		  proplists:get_value("ocr", Fields)} of
+	    case catch {proplists:get_value("challenge", Fields),
+			proplists:get_value("ocr", Fields)} of
 		{[Id|_], [OCR|_]} ->
 		    ?T(case mnesia:read(captcha, Id, write) of
 			   [#captcha{pid=Pid, args=Args, key=Key, tref=Tref}] ->
 			       mnesia:delete({captcha, Id}),
 			       erlang:cancel_timer(Tref),
 			       if OCR == Key ->
-				       Pid ! {captcha_succeed, Args},
+				       if is_pid(Pid) ->
+					       Pid ! {captcha_succeed, Args};
+					  true ->
+					       ok
+				       end,
 				       ok;
 				  true ->
-				       Pid ! {captcha_failed, Args},
+				       if is_pid(Pid) ->
+					       Pid ! {captcha_failed, Args};
+					  true ->
+					       ok
+				       end,
 				       {error, bad_match}
 			       end;
 			   _ ->
@@ -208,16 +277,19 @@ process(_Handlers, #request{method='GET', lang=Lang, path=[_, Id]}) ->
 	    ejabberd_web:error(not_found)
     end;
 
-process(_Handlers, #request{method='GET', path=[_, Id, "image"]}) ->
+process(_Handlers, #request{method='GET', path=[_, Id, "image"], ip = IP}) ->
+    {Addr, _Port} = IP,
     case mnesia:dirty_read(captcha, Id) of
 	[#captcha{key=Key}] ->
-	    case create_image(Key) of
+	    case create_image(Addr, Key) of
 		{ok, Type, _, Img} ->
 		    {200,
 		     [{"Content-Type", Type},
 		      {"Cache-Control", "no-cache"},
 		      {"Last-Modified", httpd_util:rfc1123_date()}],
 		     Img};
+                {error, limit} ->
+                    ejabberd_web:error(not_allowed);
 		_ ->
 		    ejabberd_web:error(not_found)
 	    end;
@@ -256,6 +328,20 @@ init([]) ->
     check_captcha_setup(),
     {ok, #state{}}.
 
+handle_call({is_limited, Limiter, RateLimit}, _From, State) ->
+    NowPriority = now_priority(),
+    CleanPriority = NowPriority + ?LIMIT_PERIOD,
+    Limits = clean_treap(State#state.limits, CleanPriority),
+    case treap:lookup(Limiter, Limits) of
+        {ok, _, Rate} when Rate >= RateLimit ->
+            {reply, true, State#state{limits = Limits}};
+        {ok, Priority, Rate} ->
+            NewLimits = treap:insert(Limiter, Priority, Rate+1, Limits),
+            {reply, false, State#state{limits = NewLimits}};
+        _ ->
+            NewLimits = treap:insert(Limiter, NowPriority, 1, Limits),
+            {reply, false, State#state{limits = NewLimits}}
+    end;
 handle_call(_Request, _From, State) ->
     {reply, bad_request, State}.
 
@@ -266,7 +352,11 @@ handle_info({remove_id, Id}, State) ->
     ?DEBUG("captcha ~p timed out", [Id]),
     _ = ?T(case mnesia:read(captcha, Id, write) of
 	       [#captcha{args=Args, pid=Pid}] ->
-		   Pid ! {captcha_failed, Args},
+		   if is_pid(Pid) ->
+			   Pid ! {captcha_failed, Args};
+		      true ->
+			   ok
+		   end,
 		   mnesia:delete({captcha, Id});
 	       _ ->
 		   ok
@@ -293,11 +383,22 @@ code_change(_OldVsn, State, _Extra) ->
 %% Reason = atom()
 %%--------------------------------------------------------------------
 create_image() ->
+    create_image(undefined).
+
+create_image(Limiter) ->
     %% Six numbers from 1 to 9.
     Key = string:substr(randoms:get_string(), 1, 6),
-    create_image(Key).
+    create_image(Limiter, Key).
 
-create_image(Key) ->
+create_image(Limiter, Key) ->
+    case is_limited(Limiter) of
+        true ->
+            {error, limit};
+        false ->
+            do_create_image(Key)
+    end.
+
+do_create_image(Key) ->
     FileName = get_prog_name(),
     Cmd = lists:flatten(io_lib:format("~s ~s", [FileName, Key])),
     case cmd(Cmd) of
@@ -327,18 +428,80 @@ get_prog_name() ->
     case ejabberd_config:get_local_option(captcha_cmd) of
 	FileName when is_list(FileName) ->
 	    FileName;
-	_ ->
+	Value when (Value == undefined) or (Value == "") ->
 	    ?DEBUG("The option captcha_cmd is not configured, but some "
 			  "module wants to use the CAPTCHA feature.", []),
-	    throw({error, option_not_configured_captcha_cmd})
+	    false
     end.
 
 get_url(Str) ->
-    case ejabberd_config:get_local_option(captcha_host) of
-	Host when is_list(Host) ->
+    CaptchaHost = ejabberd_config:get_local_option(captcha_host),
+    case string:tokens(CaptchaHost, ":") of
+	[Host] ->
 	    "http://" ++ Host ++ "/captcha/" ++ Str;
+	["http"++_ = TransferProt, Host] ->
+	    TransferProt ++ ":" ++ Host ++ "/captcha/" ++ Str;
+	[Host, PortString] ->
+	    TransferProt = atom_to_list(get_transfer_protocol(PortString)),
+	    TransferProt ++ "://" ++ Host ++ ":" ++ PortString ++ "/captcha/" ++ Str;
+	[TransferProt, Host, PortString] ->
+	    TransferProt ++ ":" ++ Host ++ ":" ++ PortString ++ "/captcha/" ++ Str;
 	_ ->
 	    "http://" ++ ?MYNAME ++ "/captcha/" ++ Str
+    end.
+
+get_transfer_protocol(PortString) ->
+    PortNumber = list_to_integer(PortString),
+    PortListeners = get_port_listeners(PortNumber),
+    get_captcha_transfer_protocol(PortListeners).
+
+get_port_listeners(PortNumber) ->
+    AllListeners = ejabberd_config:get_local_option(listen),
+    lists:filter(
+      fun({{Port, _Ip, _Netp}, _Module1, _Opts1}) when Port == PortNumber ->
+	      true;
+	 (_) ->
+	      false
+      end,
+      AllListeners).
+
+get_captcha_transfer_protocol([]) ->
+    throw("The port number mentioned in captcha_host is not "
+	  "a ejabberd_http listener with 'captcha' option. "
+	  "Change the port number or specify http:// in that option.");
+get_captcha_transfer_protocol([{{_Port, _Ip, tcp}, ejabberd_http, Opts}
+			       | Listeners]) ->
+    case lists:member(captcha, Opts) of
+	true ->
+	    case lists:member(tls, Opts) of
+		true ->
+		    https;
+		false ->
+		    http
+	    end;
+	false ->
+	    get_captcha_transfer_protocol(Listeners)
+    end;
+get_captcha_transfer_protocol([_ | Listeners]) ->
+    get_captcha_transfer_protocol(Listeners).
+
+is_limited(undefined) ->
+    false;
+is_limited(Limiter) ->
+    case ejabberd_config:get_local_option(captcha_limit) of
+        Int when is_integer(Int), Int > 0 ->
+            case catch gen_server:call(?MODULE, {is_limited, Limiter, Int},
+                                       5000) of
+                true ->
+                    true;
+                false ->
+                    false;
+                Err ->
+                    ?ERROR_MSG("Call failed: ~p", [Err]),
+                    false
+            end;
+        _ ->
+            false
     end.
 
 %%--------------------------------------------------------------------
@@ -389,28 +552,40 @@ return(Port, TRef, Result) ->
     catch port_close(Port),
     Result.
 
-is_feature_enabled() ->
-    try get_prog_name() of
-	Prog when is_list(Prog) -> true
-    catch 
-	_:_ -> false
-    end.
-
 is_feature_available() ->
-    case is_feature_enabled() of
-	false -> false;
-	true ->
-	    case create_image() of
-		{ok, _, _, _} -> true;
-		_Error -> false
-	    end
+    case get_prog_name() of
+	Prog when is_list(Prog) -> true;
+	false -> false
     end.
 
 check_captcha_setup() ->
-    case is_feature_enabled() andalso not is_feature_available() of
+    AbleToGenerateCaptcha = case create_image() of
+                                {ok, _, _, _} -> true;
+                                _Error -> false
+                            end,
+    case is_feature_available() andalso not AbleToGenerateCaptcha of
 	true ->
 	    ?CRITICAL_MSG("Captcha is enabled in the option captcha_cmd, "
-			  "but it can't generate images.", []);
+			  "but it can't generate images.", []),
+	    throw({error, captcha_cmd_enabled_but_fails});
 	false ->
 	    ok
     end.
+
+clean_treap(Treap, CleanPriority) ->
+    case treap:is_empty(Treap) of
+        true ->
+            Treap;
+        false ->
+            {_Key, Priority, _Value} = treap:get_root(Treap),
+            if
+                Priority > CleanPriority ->
+                    clean_treap(treap:delete_root(Treap), CleanPriority);
+                true ->
+                    Treap
+            end
+    end.
+
+now_priority() ->
+    {MSec, Sec, USec} = now(),
+    -((MSec*1000000 + Sec)*1000000 + USec).

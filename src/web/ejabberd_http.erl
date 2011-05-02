@@ -5,7 +5,7 @@
 %%% Created : 27 Feb 2004 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -111,6 +111,7 @@ init({SockMod, Socket}, Opts) ->
     %%  web_admin -> {["admin"], ejabberd_web_admin}
     %%  http_bind -> {["http-bind"], mod_http_bind}
     %%  http_poll -> {["http-poll"], ejabberd_http_poll}
+    %%  register -> {["register"], mod_register_web}
 
     RequestHandlers =
 	case lists:keysearch(request_handlers, 1, Opts) of
@@ -119,6 +120,10 @@ init({SockMod, Socket}, Opts) ->
         end ++
 	case lists:member(captcha, Opts) of
             true -> [{["captcha"], ejabberd_captcha}];
+            false -> []
+        end ++
+        case lists:member(register, Opts) of
+            true -> [{["register"], mod_register_web}];
             false -> []
         end ++
         case lists:member(web_admin, Opts) of
@@ -357,13 +362,15 @@ process_request(#state{request_method = Method,
 			 LQ ->
 			     LQ
 		     end,
-	    {ok, IP} =
+	    {ok, IPHere} =
 		case SockMod of
 		    gen_tcp ->
 			inet:peername(Socket);
 		    _ ->
 			SockMod:peername(Socket)
 		end,
+	    XFF = proplists:get_value('X-Forwarded-For', RequestHeaders, []),
+	    IP = analyze_ip_xff(IPHere, XFF, Host),
 	    Request = #request{method = Method,
 			       path = LPath,
 			       q = LQuery,
@@ -404,13 +411,15 @@ process_request(#state{request_method = Method,
 		       request_headers = RequestHeaders,
 		       request_handlers = RequestHandlers} = State)
   when (Method=:='POST' orelse Method=:='PUT') andalso is_integer(Len) ->
-    {ok, IP} =
+    {ok, IPHere} =
 	case SockMod of
 	    gen_tcp ->
 		inet:peername(Socket);
 	    _ ->
 		SockMod:peername(Socket)
 	end,
+    XFF = proplists:get_value('X-Forwarded-For', RequestHeaders, []),
+    IP = analyze_ip_xff(IPHere, XFF, Host),
     case SockMod of
 	gen_tcp ->
 	    inet:setopts(Socket, [{packet, 0}]);
@@ -461,6 +470,31 @@ process_request(State) ->
       ejabberd_web:make_xhtml([{xmlelement, "h1", [],
 				[{xmlcdata, "400 Bad Request"}]}])).
 
+%% Support for X-Forwarded-From
+analyze_ip_xff(IP, [], _Host) ->
+    IP;
+analyze_ip_xff({IPLast, Port}, XFF, Host) ->
+    [ClientIP | ProxiesIPs] = string:tokens(XFF, ", ")
+	++ [inet_parse:ntoa(IPLast)],
+    TrustedProxies = case ejabberd_config:get_local_option(
+			    {trusted_proxies, Host}) of
+			 undefined -> [];
+			 TPs -> TPs
+		     end,
+    IPClient = case is_ipchain_trusted(ProxiesIPs, TrustedProxies) of
+		   true ->
+		       {ok, IPFirst} = inet_parse:address(ClientIP),
+		       ?DEBUG("The IP ~w was replaced with ~w due to header "
+			      "X-Forwarded-For: ~s", [IPLast, IPFirst, XFF]),
+		       IPFirst;
+		   false ->
+		       IPLast
+	       end,
+    {IPClient, Port}.
+is_ipchain_trusted(_UserIPs, all) ->
+    true;
+is_ipchain_trusted(UserIPs, TrustedIPs) ->
+    [] == UserIPs -- ["127.0.0.1" | TrustedIPs].
 
 recv_data(State, Len) ->
     recv_data(State, Len, []).
@@ -523,7 +557,13 @@ make_xhtml_output(State, Status, Headers, XHTML) ->
 		  end, HeadersOut),
     SL = [Version, integer_to_list(Status), " ",
 	  code_to_phrase(Status), "\r\n"],
-    [SL, H, "\r\n", Data].
+
+    Data2 = case State#state.request_method of
+		  'HEAD' -> "";
+		  _ -> Data
+	      end,
+
+    [SL, H, "\r\n", Data2].
 
 make_text_output(State, Status, Headers, Text) when is_list(Text) ->
     make_text_output(State, Status, Headers, list_to_binary(Text));
@@ -560,7 +600,13 @@ make_text_output(State, Status, Headers, Data) when is_binary(Data) ->
 		  end, HeadersOut),
     SL = [Version, integer_to_list(Status), " ",
 	  code_to_phrase(Status), "\r\n"],
-    [SL, H, "\r\n", Data].
+
+    Data2 = case State#state.request_method of
+		  'HEAD' -> "";
+		  _ -> Data
+	      end,
+
+    [SL, H, "\r\n", Data2].
 
 
 parse_lang(Langs) ->

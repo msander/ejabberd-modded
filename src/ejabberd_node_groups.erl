@@ -5,7 +5,7 @@
 %%% Created :  1 Nov 2006 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -40,6 +40,12 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
+-ifdef(SSL40).
+-define(PG2, pg2).
+-else.
+-define(PG2, pg2_backport).
+-endif.
+
 -record(state, {}).
 
 %%====================================================================
@@ -54,20 +60,20 @@ start_link() ->
 
 join(Name) ->
     PG = {?MODULE, Name},
-    pg2:create(PG),
-    pg2:join(PG, whereis(?MODULE)).
+    ?PG2:create(PG),
+    ?PG2:join(PG, whereis(?MODULE)).
 
 leave(Name) ->
     PG = {?MODULE, Name},
-    pg2:leave(PG, whereis(?MODULE)).
+    ?PG2:leave(PG, whereis(?MODULE)).
 
 get_members(Name) ->
     PG = {?MODULE, Name},
-    [node(P) || P <- pg2:get_members(PG)].
+    [node(P) || P <- ?PG2:get_members(PG)].
 
 get_closest_node(Name) ->
     PG = {?MODULE, Name},
-    node(pg2:get_closest_pid(PG)).
+    node(?PG2:get_closest_pid(PG)).
 
 %%====================================================================
 %% gen_server callbacks

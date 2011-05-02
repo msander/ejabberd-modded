@@ -5,7 +5,7 @@
 %%% Created : 12 Dec 2004 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -66,7 +66,7 @@ check_cache_last_options(Server) ->
     case get_cache_option(Server) of
 	false -> no_cache;
 	{true, _CacheTime} ->
-	    case get_mod_last_enabled(Server) of
+	    case get_mod_last_configured(Server) of
 		no_mod_last ->
 		    ?ERROR_MSG("In host ~p extauth is used, extauth_cache is enabled but "
 			       "mod_last is not enabled.", [Server]),
@@ -290,15 +290,27 @@ get_last_info(User, Server) ->
     case get_mod_last_enabled(Server) of
 	mod_last -> mod_last:get_last_info(User, Server);
 	mod_last_odbc -> mod_last_odbc:get_last_info(User, Server);
-	mod_mod_last -> mod_last_required
+	no_mod_last -> mod_last_required
     end.
 
 %% @spec (Server) -> mod_last | mod_last_odbc | no_mod_last
 get_mod_last_enabled(Server) ->
-    ML = lists:member(mod_last, gen_mod:loaded_modules(Server)),
-    MLO = lists:member(mod_last_odbc, gen_mod:loaded_modules(Server)),
+    ML = gen_mod:is_loaded(Server, mod_last),
+    MLO = gen_mod:is_loaded(Server, mod_last_odbc),
     case {ML, MLO} of
 	{true, _} -> mod_last;
 	{false, true} -> mod_last_odbc;
 	{false, false} -> no_mod_last
     end.
+
+get_mod_last_configured(Server) ->
+    ML = is_configured(Server, mod_last),
+    MLO = is_configured(Server, mod_last_odbc),
+    case {ML, MLO} of
+	{true, _} -> mod_last;
+	{false, true} -> mod_last_odbc;
+	{false, false} -> no_mod_last
+    end.
+
+is_configured(Host, Module) ->
+    lists:keymember(Module, 1, ejabberd_config:get_local_option({modules, Host})).

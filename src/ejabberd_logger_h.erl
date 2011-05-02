@@ -5,7 +5,7 @@
 %%% Created : 23 Oct 2003 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -144,6 +144,19 @@ write_event(Fd, {Time, {info_report, _GL, {Pid, std_info, Rep}}}) ->
     file:write(Fd, io_lib:format(T ++ S ++ add_node("", Pid), []));
 write_event(Fd, {Time, {info_msg, _GL, {Pid, Format, Args}}}) ->
     T = write_time(Time, "INFO REPORT"),
+    case catch io_lib:format(add_node(Format,Pid), Args) of
+	S when is_list(S) ->
+	    file:write(Fd, io_lib:format(T ++ S, []));
+	_ ->
+	    F = add_node("ERROR: ~p - ~p~n", Pid),
+	    file:write(Fd, io_lib:format(T ++ F, [Format,Args]))
+    end;
+write_event(Fd, {Time, {warning_report, _GL, {Pid, std_warning, Rep}}}) ->
+    T = write_time(Time, "WARNING REPORT"),
+    S = format_report(Rep),
+    file:write(Fd, io_lib:format(T ++ S ++ add_node("", Pid), []));
+write_event(Fd, {Time, {warning_msg, _GL, {Pid, Format, Args}}}) ->
+    T = write_time(Time, "WARNING REPORT"),
     case catch io_lib:format(add_node(Format,Pid), Args) of
 	S when is_list(S) ->
 	    file:write(Fd, io_lib:format(T ++ S, []));

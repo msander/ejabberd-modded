@@ -5,7 +5,7 @@
 %%% Created :  6 Dec 2002 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -353,6 +353,9 @@ handle_info({route, From, To, Packet}, StateName, StateData) ->
 	    Err = jlib:make_error_reply(Packet, ?ERR_NOT_ALLOWED),
 	    ejabberd_router:route_error(To, From, Err, Packet)
     end,
+    {next_state, StateName, StateData};
+handle_info(Info, StateName, StateData) ->
+    ?ERROR_MSG("Unexpected info: ~p", [Info]),
     {next_state, StateName, StateData}.
 
 

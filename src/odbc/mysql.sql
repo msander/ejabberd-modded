@@ -1,5 +1,5 @@
 --
--- ejabberd, Copyright (C) 2002-2010   ProcessOne
+-- ejabberd, Copyright (C) 2002-2011   ProcessOne
 --
 -- This program is free software; you can redistribute it and/or
 -- modify it under the terms of the GNU General Public License as
@@ -72,7 +72,7 @@ CREATE INDEX i_despool USING BTREE ON spool(username);
 
 CREATE TABLE vcard (
     username varchar(250) PRIMARY KEY,
-    vcard text NOT NULL,
+    vcard mediumtext NOT NULL,
     created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) CHARACTER SET utf8;
 

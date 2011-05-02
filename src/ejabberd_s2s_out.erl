@@ -5,7 +5,7 @@
 %%% Created :  6 Dec 2002 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -44,6 +44,7 @@
 	 wait_for_features/2,
 	 wait_for_auth_result/2,
 	 wait_for_starttls_proceed/2,
+	 relay_to_bridge/2,
 	 reopen_socket/2,
 	 wait_before_retry/2,
 	 stream_established/2,
@@ -65,13 +66,14 @@
 		tls = false,
 		tls_required = false,
 		tls_enabled = false,
-		tls_options = [],
+		tls_options = [connect],
 		authenticated = false,
 		db_enabled = true,
 		try_auth = true,
 		myname, server, queue,
 		delay_to_retry = undefined_delay,
 		new = false, verify = false,
+		bridge,
 		timer}).
 
 %%-define(DBGFSM, true).
@@ -106,6 +108,7 @@
 	"xmlns:stream='http://etherx.jabber.org/streams' "
 	"xmlns='jabber:server' "
 	"xmlns:db='jabber:server:dialback' "
+	"from='~s' "
 	"to='~s'~s>"
        ).
 
@@ -136,7 +139,7 @@ start_connection(Pid) ->
     p1_fsm:send_event(Pid, init).
 
 stop_connection(Pid) ->
-    p1_fsm:send_event(Pid, stop).
+    p1_fsm:send_event(Pid, closed).
 
 %%%----------------------------------------------------------------------
 %%% Callback functions from p1_fsm
@@ -152,16 +155,18 @@ stop_connection(Pid) ->
 init([From, Server, Type]) ->
     process_flag(trap_exit, true),
     ?DEBUG("started: ~p", [{From, Server, Type}]),
-    TLS = case ejabberd_config:get_local_option(s2s_use_starttls) of
-	      undefined ->
-		  false;
-	      UseStartTLS ->
-		  UseStartTLS
+    {TLS, TLSRequired} = case ejabberd_config:get_local_option(s2s_use_starttls) of
+	      UseTls when (UseTls==undefined) or (UseTls==false) ->
+		  {false, false};
+	      UseTls when (UseTls==true) or (UseTls==optional) ->
+		  {true, false};
+	      UseTls when (UseTls==required) or (UseTls==required_trusted) ->
+		  {true, true}
 	  end,
     UseV10 = TLS,
     TLSOpts = case ejabberd_config:get_local_option(s2s_certfile) of
 		  undefined ->
-		      [];
+		      [connect];
 		  CertFile ->
 		      [{certfile, CertFile}, connect]
 	      end,
@@ -175,6 +180,7 @@ init([From, Server, Type]) ->
     Timer = erlang:start_timer(?S2STIMEOUT, self(), []),
     {ok, open_socket, #state{use_v10 = UseV10,
 			     tls = TLS,
+			     tls_required = TLSRequired,
 			     tls_options = TLSOpts,
 			     queue = queue:new(),
 			     myname = From,
@@ -192,7 +198,8 @@ init([From, Server, Type]) ->
 open_socket(init, StateData) ->
     log_s2s_out(StateData#state.new,
 		StateData#state.myname,
-		StateData#state.server),
+		StateData#state.server,
+		StateData#state.tls),
     ?DEBUG("open_socket: ~p", [{StateData#state.myname,
 				StateData#state.server,
 				StateData#state.new,
@@ -221,16 +228,27 @@ open_socket(init, StateData) ->
 					   tls_enabled = false,
 					   streamid = new_id()},
 	    send_text(NewStateData, io_lib:format(?STREAM_HEADER,
-						  [StateData#state.server,
+						  [StateData#state.myname, StateData#state.server,
 						   Version])),
 	    {next_state, wait_for_stream, NewStateData, ?FSMTIMEOUT};
 	{error, _Reason} ->
 	    ?INFO_MSG("s2s connection: ~s -> ~s (remote server not found)",
 		      [StateData#state.myname, StateData#state.server]),
-	    wait_before_reconnect(StateData)
-	    %%{stop, normal, StateData}
+	    case ejabberd_hooks:run_fold(find_s2s_bridge,
+					 undefined,
+					 [StateData#state.myname,
+					  StateData#state.server]) of
+		{Mod, Fun, Type} ->
+		    ?INFO_MSG("found a bridge to ~s for: ~s -> ~s",
+			      [Type, StateData#state.myname,
+			       StateData#state.server]),
+		    NewStateData = StateData#state{bridge={Mod, Fun}},
+		    {next_state, relay_to_bridge, NewStateData};
+		_ ->
+		    wait_before_reconnect(StateData)
+	    end
     end;
-open_socket(stop, StateData) ->
+open_socket(closed, StateData) ->
     ?INFO_MSG("s2s connection: ~s -> ~s (stopped in open socket)",
 	      [StateData#state.myname, StateData#state.server]),
     {stop, normal, StateData};
@@ -298,6 +316,10 @@ wait_for_stream({xmlstreamstart, _Name, Attrs}, StateData) ->
 	{"jabber:server", "jabber:server:dialback", true} when
 	StateData#state.use_v10 ->
 	    {next_state, wait_for_features, StateData, ?FSMTIMEOUT};
+	%% Clause added to handle Tigase's workaround for an old ejabberd bug:
+	{"jabber:server", "jabber:server:dialback", true} when
+	not StateData#state.use_v10 ->
+	    send_db_request(StateData);
 	{"jabber:server", "", true} when StateData#state.use_v10 ->
 	    {next_state, wait_for_features, StateData#state{db_enabled = false}, ?FSMTIMEOUT};
 	{NSProvided, DB, _} ->
@@ -337,16 +359,21 @@ wait_for_validation({xmlstreamelement, El}, StateData) ->
     case is_verify_res(El) of
 	{result, To, From, Id, Type} ->
 	    ?DEBUG("recv result: ~p", [{From, To, Id, Type}]),
-	    case Type of
-		"valid" ->
+	    case {Type, StateData#state.tls_enabled, StateData#state.tls_required} of
+		{"valid", Enabled, Required} when (Enabled==true) or (Required==false) ->
 		    send_queue(StateData, StateData#state.queue),
-		    ?INFO_MSG("Connection established: ~s -> ~s",
-			      [StateData#state.myname, StateData#state.server]),
+		    ?INFO_MSG("Connection established: ~s -> ~s with TLS=~p",
+			      [StateData#state.myname, StateData#state.server, StateData#state.tls_enabled]),
 		    ejabberd_hooks:run(s2s_connect_hook,
 				       [StateData#state.myname,
 					StateData#state.server]),
 		    {next_state, stream_established,
 		     StateData#state{queue = queue:new()}};
+		{"valid", Enabled, Required} when (Enabled==false) and (Required==true) ->
+		    %% TODO: bounce packets
+		    ?INFO_MSG("Closing s2s connection: ~s -> ~s (TLS is required but unavailable)",
+			      [StateData#state.myname, StateData#state.server]),
+		    {stop, normal, StateData};
 		_ ->
 		    %% TODO: bounce packets
 		    ?INFO_MSG("Closing s2s connection: ~s -> ~s (invalid dialback key)",
@@ -539,7 +566,7 @@ wait_for_auth_result({xmlstreamelement, El}, StateData) ->
 		    ejabberd_socket:reset_stream(StateData#state.socket),
 		    send_text(StateData,
 			      io_lib:format(?STREAM_HEADER,
-					    [StateData#state.server,
+					    [StateData#state.myname, StateData#state.server,
 					     " version='1.0'"])),
 		    {next_state, wait_for_stream,
 		     StateData#state{streamid = new_id(),
@@ -607,7 +634,7 @@ wait_for_starttls_proceed({xmlstreamelement, El}, StateData) ->
 		    Socket = StateData#state.socket,
 		    TLSOpts = case ejabberd_config:get_local_option(
 				     {domain_certfile,
-				      StateData#state.server}) of
+				      StateData#state.myname}) of
 				  undefined ->
 				      StateData#state.tls_options;
 				  CertFile ->
@@ -619,11 +646,12 @@ wait_for_starttls_proceed({xmlstreamelement, El}, StateData) ->
 		    TLSSocket = ejabberd_socket:starttls(Socket, TLSOpts),
 		    NewStateData = StateData#state{socket = TLSSocket,
 						   streamid = new_id(),
-						   tls_enabled = true
+						   tls_enabled = true,
+						   tls_options = TLSOpts
 						  },
 		    send_text(NewStateData,
 			      io_lib:format(?STREAM_HEADER,
-					    [StateData#state.server,
+					    [StateData#state.myname, StateData#state.server,
 					     " version='1.0'"])),
 		    {next_state, wait_for_stream, NewStateData, ?FSMTIMEOUT};
 		_ ->
@@ -675,6 +703,15 @@ reopen_socket(closed, StateData) ->
 %% This state is use to avoid reconnecting to often to bad sockets
 wait_before_retry(_Event, StateData) ->
     {next_state, wait_before_retry, StateData, ?FSMTIMEOUT}.
+
+relay_to_bridge(stop, StateData) ->
+    wait_before_reconnect(StateData);
+relay_to_bridge(closed, StateData) ->
+    ?INFO_MSG("relay to bridge: ~s -> ~s (closed)",
+	      [StateData#state.myname, StateData#state.server]),
+    {stop, normal, StateData};
+relay_to_bridge(_Event, StateData) ->
+    {next_state, relay_to_bridge, StateData}.
 
 stream_established({xmlstreamelement, El}, StateData) ->
     ?DEBUG("s2S stream established", []),
@@ -826,6 +863,19 @@ handle_info({send_element, El}, StateName, StateData) ->
 	wait_before_retry ->
 	    bounce_element(El, ?ERR_REMOTE_SERVER_NOT_FOUND),
 	    {next_state, StateName, StateData};
+	relay_to_bridge ->
+	    %% In this state we relay all outbound messages
+	    %% to a foreign protocol bridge such as SMTP, SIP, etc.
+	    {Mod, Fun} = StateData#state.bridge,
+	    ?DEBUG("relaying stanza via ~p:~p/1", [Mod, Fun]),
+	    case catch Mod:Fun(El) of
+		{'EXIT', Reason} ->
+		    ?ERROR_MSG("Error while relaying to bridge: ~p", [Reason]),
+		    bounce_element(El, ?ERR_INTERNAL_SERVER_ERROR),
+		    wait_before_reconnect(StateData);
+		_ ->
+		    {next_state, StateName, StateData}
+	    end;
 	_ ->
 	    Q = queue:in(El, StateData#state.queue),
 	    {next_state, StateName, StateData#state{queue = Q},
@@ -1151,10 +1201,10 @@ outgoing_s2s_timeout() ->
 
 %% Human readable S2S logging: Log only new outgoing connections as INFO
 %% Do not log dialback
-log_s2s_out(false, _, _) -> ok;
+log_s2s_out(false, _, _, _) -> ok;
 %% Log new outgoing connections:
-log_s2s_out(_, Myname, Server) ->
-    ?INFO_MSG("Trying to open s2s connection: ~s -> ~s",[Myname, Server]).
+log_s2s_out(_, Myname, Server, Tls) ->
+    ?INFO_MSG("Trying to open s2s connection: ~s -> ~s with TLS=~p", [Myname, Server, Tls]).
 
 %% Calculate timeout depending on which state we are in:
 %% Can return integer > 0 | infinity

@@ -5,7 +5,7 @@
 %%% Created : 17 Jul 2008 by Pablo Polvorin <pablo.polvorin@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -153,8 +153,8 @@ process_elements(Elements,State) ->
 process_element(El=#xmlel{name=user, ns=_XMLNS},
 		State=#parsing_state{host=Host}) ->
     case add_user(El,Host) of
-	{error, _Other} -> error;
-	_ -> ok
+	ok -> ok;
+	{error, _Other} -> error
     end,
     State;
 
@@ -196,33 +196,43 @@ process_element(El,State) ->
 add_user(El, Domain) ->
     User = exmpp_xml:get_attribute(El,name,none),
     Password = exmpp_xml:get_attribute(El,password,none),
-    add_user(El, Domain, ?BTL(User), ?BTL(Password)).
+    add_user(El, Domain, User, Password).
 
-%% @spec (El::xmlel(), Domain::string(), User::string(), Password::string())
-%%       -> ok | {atomic, exists} | {error, not_allowed}
+%% @spec (El::xmlel(), Domain::string(), User::binary(), Password::binary() | none)
+%%       -> ok | {error, ErrorText::string()}
 %% @doc Add a new user to the database.
 %% If user already exists, it will be only updated.
-add_user(El, Domain, User, Password) ->
+add_user(El, Domain, UserBinary, none) ->
+    User = ?BTL(UserBinary),
+    io:format("Account ~s@~s will not be created, updating it...~n",
+	      [User, Domain]),
+    io:format(""),
+    populate_user_with_elements(El, Domain, User),
+    ok;
+add_user(El, Domain, UserBinary, PasswordBinary) ->
+    User = ?BTL(UserBinary),
+    Password = ?BTL(PasswordBinary),
     case create_user(User,Password,Domain) of
 	ok ->
-	    ok = exmpp_xml:foreach(
-		   fun(_,Child) ->
-			   populate_user(User,Domain,Child)
-		   end,
-		   El),
+	    populate_user_with_elements(El, Domain, User),
 	    ok;
 	{atomic, exists} ->
 	    io:format("Account ~s@~s already exists, updating it...~n",
 		      [User, Domain]),
 	    io:format(""),
-	    ok = exmpp_xml:foreach(
-		   fun(_,Child) ->
-			   populate_user(User,Domain,Child)
-		   end,
-		   El);
+	    populate_user_with_elements(El, Domain, User),
+	    ok;
 	{error, Other} ->
-	    ?ERROR_MSG("Error adding user ~s@~s: ~p~n", [User, Domain, Other])
+	    ?ERROR_MSG("Error adding user ~s@~s: ~p~n", [User, Domain, Other]),
+	    {error, Other}
     end.
+
+populate_user_with_elements(El, Domain, User) ->
+    exmpp_xml:foreach(
+      fun (_,Child) ->
+	      populate_user(User,Domain,Child)
+      end,
+      El).
 
 %% @spec (User::string(), Password::string(), Domain::string())
 %%       -> ok | {atomic, exists} | {error, not_allowed}

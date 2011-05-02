@@ -5,7 +5,7 @@
 %%% Created : Tue Feb 20 13:15:52 CET 2007
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -33,8 +33,6 @@
 -module(mod_http_bind).
 -author('steve@zeank.in-berlin.de').
 
--define(MOD_HTTP_BIND_VERSION, "1.2").
-
 %%-define(ejabberd_debug, true).
 
 -behaviour(gen_mod).
@@ -49,6 +47,8 @@
 -include("jlib.hrl").
 -include("ejabberd_http.hrl").
 -include("http_bind.hrl").
+
+-define(PROCNAME_MHB, ejabberd_mod_http_bind).
 
 %% Duplicated from ejabberd_http_bind.
 %% TODO: move to hrl file.
@@ -80,7 +80,7 @@ process(_Path, _Request) ->
                     [{xmlcdata, "400 Bad Request"}]}}.
 
 get_human_html_xmlel() ->
-    Heading = "ejabberd " ++ atom_to_list(?MODULE) ++ " v" ++ ?MOD_HTTP_BIND_VERSION,
+    Heading = "ejabberd " ++ atom_to_list(?MODULE),
     {xmlelement, "html", [{"xmlns", "http://www.w3.org/1999/xhtml"}],
      [{xmlelement, "head", [],
        [{xmlelement, "title", [], [{xmlcdata, Heading}]}]},
@@ -100,35 +100,23 @@ get_human_html_xmlel() ->
 %%%----------------------------------------------------------------------
 %%% BEHAVIOUR CALLBACKS
 %%%----------------------------------------------------------------------
-start(_Host, _Opts) ->
+start(Host, _Opts) ->
     setup_database(),
-    HTTPBindSupervisor =
-        {ejabberd_http_bind_sup,
+    Proc = gen_mod:get_module_proc(Host, ?PROCNAME_MHB),
+    ChildSpec =
+        {Proc,
          {ejabberd_tmp_sup, start_link,
-          [ejabberd_http_bind_sup, ejabberd_http_bind]},
+          [Proc, ejabberd_http_bind]},
          permanent,
          infinity,
          supervisor,
          [ejabberd_tmp_sup]},
-    case supervisor:start_child(ejabberd_sup, HTTPBindSupervisor) of
-        {ok, _Pid} ->
-            ok;
-        {ok, _Pid, _Info} ->
-            ok;
-        {error, {already_started, _PidOther}} ->
-            % mod_http_bind is already started so it will not be started again
-            ok;
-        {error, Error} ->
-            {'EXIT', {start_child_error, Error}}
-    end.
+    supervisor:start_child(ejabberd_sup, ChildSpec).
 
-stop(_Host) ->
-    case supervisor:terminate_child(ejabberd_sup, ejabberd_http_bind_sup) of
-        ok ->
-            ok;
-        {error, Error} ->
-            {'EXIT', {terminate_child_error, Error}}
-    end.
+stop(Host) ->
+    Proc = gen_mod:get_module_proc(Host, ?PROCNAME_MHB),
+    supervisor:terminate_child(ejabberd_sup, Proc),
+    supervisor:delete_child(ejabberd_sup, Proc).
 
 setup_database() ->
     migrate_database(),

@@ -5,7 +5,7 @@
 %%% Created : 12 Oct 2006 by Evgeniy Khramtsov <xram@jabber.ru>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -42,13 +42,17 @@
 -define(PROCNAME, ejabberd_mod_proxy65).
 
 start(Host, Opts) ->
-    mod_proxy65_service:add_listener(Host, Opts),
-    Proc = gen_mod:get_module_proc(Host, ?PROCNAME),
-    ChildSpec = {
-      Proc, {?MODULE, start_link, [Host, Opts]},
-      transient, infinity, supervisor, [?MODULE]
-     },
-    supervisor:start_child(ejabberd_sup, ChildSpec).
+    case mod_proxy65_service:add_listener(Host, Opts) of
+	{error, _} = Err ->
+	    erlang:error(Err);
+	_ ->
+	    Proc = gen_mod:get_module_proc(Host, ?PROCNAME),
+	    ChildSpec = {
+	      Proc, {?MODULE, start_link, [Host, Opts]},
+	      transient, infinity, supervisor, [?MODULE]
+	     },
+	    supervisor:start_child(ejabberd_sup, ChildSpec)
+    end.
 
 stop(Host) ->
     mod_proxy65_service:delete_listener(Host),

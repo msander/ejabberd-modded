@@ -5,7 +5,7 @@
 %%% Created : 15 Feb 2003 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -105,8 +105,16 @@ init([From, Host, Server, Username, Encoding, Port, Password]) ->
 open_socket(init, StateData) ->
     Addr = StateData#state.server,
     Port = StateData#state.port,
-    ?DEBUG("connecting to ~s:~p~n", [Addr, Port]),
-    case gen_tcp:connect(Addr, Port, [binary, {packet, 0}]) of
+    ?DEBUG("Connecting with IPv6 to ~s:~p", [Addr, Port]),
+    Connect6 = gen_tcp:connect(Addr, Port, [inet6, binary, {packet, 0}]),
+    Connect = case Connect6 of
+		  {error, _} ->
+		      ?DEBUG("Connection with IPv6 to ~s:~p failed. Now using IPv4.", [Addr, Port]),
+		      gen_tcp:connect(Addr, Port, [inet, binary, {packet, 0}]);
+		  _ ->
+		      Connect6
+	      end,
+    case Connect of
 	{ok, Socket} ->
 	    NewStateData = StateData#state{socket = Socket},
 	    if
@@ -211,6 +219,7 @@ handle_info({route_chan, Channel, Resource,
     NewStateData =
 	case xml:get_attr_s("type", Attrs) of
 	    "unavailable" ->
+		send_stanza_unavailable(Channel, StateData),
 		S1 = ?SEND(io_lib:format("PART #~s\r\n", [Channel])),
 		S1#state{channels =
 			 dict:erase(Channel, S1#state.channels)};
@@ -648,13 +657,9 @@ terminate(_Reason, _StateName, FullStateData) ->
     bounce_messages("Server Connect Failed"),
     lists:foreach(
       fun(Chan) ->
-	      ejabberd_router:route(
-		jlib:make_jid(
-		  lists:concat([Chan, "%", StateData#state.server]),
-		  StateData#state.host, StateData#state.nick),
-		StateData#state.user,
-		{xmlelement, "presence", [{"type", "error"}],
-		 [Error]})
+	      Stanza = {xmlelement, "presence", [{"type", "error"}],
+		 [Error]},
+	      send_stanza(Chan, StateData, Stanza)
       end, dict:fetch_keys(StateData#state.channels)),
     case StateData#state.socket of
 	undefined ->
@@ -663,6 +668,30 @@ terminate(_Reason, _StateName, FullStateData) ->
 	    gen_tcp:close(Socket)
     end,
     ok.
+
+send_stanza(Chan, StateData, Stanza) ->
+    ejabberd_router:route(
+      jlib:make_jid(
+	lists:concat([Chan, "%", StateData#state.server]),
+	StateData#state.host, StateData#state.nick),
+      StateData#state.user,
+      Stanza).
+
+send_stanza_unavailable(Chan, StateData) ->
+    Affiliation = "member", % this is a simplification
+    Role = "none",
+    Stanza =
+	{xmlelement, "presence", [{"type", "unavailable"}],
+	 [{xmlelement, "x", [{"xmlns", ?NS_MUC_USER}],
+	   [{xmlelement, "item",
+	     [{"affiliation", Affiliation},
+	      {"role", Role}],
+	     []},
+	    {xmlelement, "status",
+	     [{"code", "110"}],
+	     []}
+	   ]}]},
+    send_stanza(Chan, StateData, Stanza).
 
 %%%----------------------------------------------------------------------
 %%% Internal functions

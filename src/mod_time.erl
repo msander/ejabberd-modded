@@ -5,7 +5,7 @@
 %%% Created : 18 Jan 2003 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -76,8 +76,8 @@ process_local_iq(_From, _To, #iq{type = Type, sub_el = SubEl} = IQ) ->
 	    {UTC, UTC_diff} = jlib:timestamp_to_iso(Now_universal, utc),
 	    Seconds_diff = calendar:datetime_to_gregorian_seconds(Now_local)
 	     - calendar:datetime_to_gregorian_seconds(Now_universal),
-	    {Hd, Md, _} = calendar:seconds_to_time(Seconds_diff),
-	    {_, TZO_diff} = jlib:timestamp_to_iso({{0, 0, 0}, {0, 0, 0}}, {Hd, Md}),
+	    {Hd, Md, _} = calendar:seconds_to_time(abs(Seconds_diff)),
+	    {_, TZO_diff} = jlib:timestamp_to_iso({{0, 0, 0}, {0, 0, 0}}, {sign(Seconds_diff), {Hd, Md}}),
 	    IQ#iq{type = result,
 		  sub_el = [{xmlelement, "time",
 			     [{"xmlns", ?NS_TIME}],
@@ -87,4 +87,5 @@ process_local_iq(_From, _To, #iq{type = Type, sub_el = SubEl} = IQ) ->
 			       [{xmlcdata, UTC ++ UTC_diff}]}]}]}
     end.
 
-
+sign(N) when N < 0 -> "-";
+sign(_)            -> "+".

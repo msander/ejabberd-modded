@@ -5,7 +5,7 @@
 %%% Created :  9 Apr 2004 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -64,11 +64,15 @@ get_acl_rule(["additions.js"],_) -> {"localhost", [all]};
 get_acl_rule(["vhosts"],_) -> {"localhost", [all]};
 
 %% The pages of a vhost are only accesible if the user is admin of that vhost:
-get_acl_rule(["server", VHost | _RPath], 'GET') -> {VHost, [configure, webadmin_view]};
+get_acl_rule(["server", VHost | _RPath], Method)
+    when Method=:='GET' orelse Method=:='HEAD' ->
+    {VHost, [configure, webadmin_view]};
 get_acl_rule(["server", VHost | _RPath], 'POST') -> {VHost, [configure]};
 
 %% Default rule: only global admins can access any other random page
-get_acl_rule(_RPath, 'GET') -> {global, [configure, webadmin_view]};
+get_acl_rule(_RPath, Method)
+    when Method=:='GET' orelse Method=:='HEAD' ->
+    {global, [configure, webadmin_view]};
 get_acl_rule(_RPath, 'POST') -> {global, [configure]}.
 
 is_acl_match(Host, Rules, Jid) ->
@@ -314,7 +318,7 @@ make_xhtml(Els, Host, Node, Lang, JID) ->
 		 [?XAE("div",
 		       [{"id", "copyright"}],
 		       [?XC("p",
-			     "ejabberd (c) 2002-2010 ProcessOne")
+			     "ejabberd (c) 2002-2011 ProcessOne")
 		       ])])])
       ]}}.
 
@@ -1028,7 +1032,7 @@ process_admin(global,
 		       auth = {_, _Auth, AJID},
 		       lang = Lang}) ->
     Res = list_vhosts(Lang, AJID),
-    make_xhtml(?H1GL(?T("ejabberd virtual hosts"), "virtualhost", "Virtual Hosting") ++ Res, global, Lang, AJID);
+    make_xhtml(?H1GL(?T("Virtual Hosts"), "virtualhost", "Virtual Hosting") ++ Res, global, Lang, AJID);
 
 process_admin(Host,
 	      #request{path = ["users"],
@@ -2241,7 +2245,7 @@ get_node(global, Node, ["update"], Query, Lang) ->
     [?XC("h1", ?T("Update ") ++ atom_to_list(Node))] ++
 	case Res of
 	    ok -> [?XREST("Submitted")];
-	    error -> [?XREST("Bad format")];
+	    {error, ErrorText} -> [?XREST("Error: " ++ ErrorText)];
 	    nothing -> []
 	end ++
 	[?XAE("form", [{"action", ""}, {"method", "post"}],
@@ -2624,9 +2628,11 @@ node_update_parse_query(Node, Query) ->
 		{ok, _} ->
 		    ok;
 		{error, Error} ->
-		    ?ERROR_MSG("~p~n", [Error]);
+		    ?ERROR_MSG("~p~n", [Error]),
+		    {error, io_lib:format("~p", [Error])};
 		{badrpc, Error} ->
-		    ?ERROR_MSG("~p~n", [Error])
+		    ?ERROR_MSG("Bad RPC: ~p~n", [Error]),
+		    {error, "Bad RPC: " ++ io_lib:format("~p", [Error])}
 	    end;
 	_ ->
 	    nothing

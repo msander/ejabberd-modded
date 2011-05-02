@@ -5,7 +5,7 @@
 %%% Created : 22 Dec 2004 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2010   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -54,7 +54,7 @@ start_link(Host) ->
 			 {type, bag},
 			 {local_content, true},
 			 {attributes, record_info(fields, sql_pool)}]),
-    mnesia:add_table_copy(local_config, node(), ram_copies),
+    mnesia:add_table_copy(sql_pool, node(), ram_copies),
     F = fun() ->
 		mnesia:delete({sql_pool, Host})
 	end,
@@ -88,13 +88,13 @@ init([Host]) ->
 					?DEFAULT_ODBC_START_INTERVAL]),
 			    ?DEFAULT_ODBC_START_INTERVAL
 		    end,
-    {ok, {{one_for_one, PoolSize+1, StartInterval},
+    {ok, {{one_for_one, PoolSize*10, 1},
 	  lists:map(
 	    fun(I) ->
 		    {I,
 		     {ejabberd_odbc, start_link, [Host, StartInterval*1000]},
 		     transient,
-		     brutal_kill,
+                     2000,
 		     worker,
 		     [?MODULE]}
 	    end, lists:seq(1, PoolSize))}}.
