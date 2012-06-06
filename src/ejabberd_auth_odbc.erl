@@ -5,7 +5,7 @@
 %%% Created : 12 Dec 2004 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -43,6 +43,7 @@
 	 is_user_exists/2,
 	 remove_user/2,
 	 remove_user/3,
+	 store_type/0,
 	 plain_password_required/0
 	]).
 
@@ -56,6 +57,9 @@ start(_Host) ->
 
 plain_password_required() ->
     false.
+
+store_type() ->
+	plain.
 
 %% @spec (User, Server, Password) -> true | false | {error, Error}
 check_password(User, Server, Password) ->

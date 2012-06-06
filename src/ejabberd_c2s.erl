@@ -5,7 +5,7 @@
 %%% Created : 16 Nov 2002 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -772,6 +772,24 @@ wait_for_sasl_response({xmlstreamelement, El}, StateData) ->
 				     authenticated = true,
 				     auth_module = AuthModule,
 				     user = U});
+		{ok, Props, ServerOut} ->
+		    (StateData#state.sockmod):reset_stream(
+		      StateData#state.socket),
+		    send_element(StateData,
+				 {xmlelement, "success",
+				  [{"xmlns", ?NS_SASL}],
+				  [{xmlcdata,
+				    jlib:encode_base64(ServerOut)}]}),
+		    U = xml:get_attr_s(username, Props),
+		    AuthModule = xml:get_attr_s(auth_module, Props),
+		    ?INFO_MSG("(~w) Accepted authentication for ~s by ~p",
+			      [StateData#state.socket, U, AuthModule]),
+		    fsm_next_state(wait_for_stream,
+				   StateData#state{
+				     streamid = new_id(),
+				     authenticated = true,
+				     auth_module = AuthModule,
+				     user = U});
 		{continue, ServerOut, NewSASLState} ->
 		    send_element(StateData,
 				 {xmlelement, "challenge",
@@ -818,6 +836,29 @@ wait_for_sasl_response(closed, StateData) ->
     {stop, normal, StateData}.
 
 
+resource_conflict_action(U, S, R) ->
+    OptionRaw = case ejabberd_sm:is_existing_resource(U, S, R) of
+		    true ->
+			ejabberd_config:get_local_option({resource_conflict,S});
+		    false ->
+			acceptnew
+		end,
+    Option = case OptionRaw of
+		 setresource -> setresource;
+		 closeold -> acceptnew; %% ejabberd_sm will close old session
+		 closenew -> closenew;
+		 acceptnew -> acceptnew;
+		 _ -> acceptnew %% default ejabberd behavior
+	     end,
+    case Option of
+	acceptnew ->
+	    {accept_resource, R};
+	closenew ->
+	    closenew;
+	setresource ->
+	    Rnew = lists:concat([randoms:get_string() | tuple_to_list(now())]),
+	    {accept_resource, Rnew}
+    end.
 
 wait_for_bind({xmlstreamelement, El}, StateData) ->
     case jlib:iq_query_info(El) of
@@ -837,7 +878,6 @@ wait_for_bind({xmlstreamelement, El}, StateData) ->
 		    send_element(StateData, Err),
 		    fsm_next_state(wait_for_bind, StateData);
 		_ ->
-		    JID = jlib:make_jid(U, StateData#state.server, R),
 		    %%Server = StateData#state.server,
 		    %%RosterVersioningFeature =
 		    %%	ejabberd_hooks:run_fold(
@@ -847,15 +887,23 @@ wait_for_bind({xmlstreamelement, El}, StateData) ->
 		    %%		      RosterVersioningFeature],
 		    %%send_element(StateData, {xmlelement, "stream:features",
 		    %%			     [], StreamFeatures}),
-		    Res = IQ#iq{type = result,
-				sub_el = [{xmlelement, "bind",
-					   [{"xmlns", ?NS_BIND}],
-					   [{xmlelement, "jid", [],
-					     [{xmlcdata,
-					       jlib:jid_to_string(JID)}]}]}]},
-		    send_element(StateData, jlib:iq_to_xml(Res)),
-		    fsm_next_state(wait_for_session,
-				   StateData#state{resource = R, jid = JID})
+		    case resource_conflict_action(U, StateData#state.server, R) of
+			closenew ->
+			    Err = jlib:make_error_reply(El, ?STANZA_ERROR("409", "modify", "conflict")),
+			    send_element(StateData, Err),
+			    fsm_next_state(wait_for_bind, StateData);
+			{accept_resource, R2} ->
+			    JID = jlib:make_jid(U, StateData#state.server, R2),
+			    Res = IQ#iq{type = result,
+					sub_el = [{xmlelement, "bind",
+						   [{"xmlns", ?NS_BIND}],
+						   [{xmlelement, "jid", [],
+						     [{xmlcdata,
+						       jlib:jid_to_string(JID)}]}]}]},
+			    send_element(StateData, jlib:iq_to_xml(Res)),
+			    fsm_next_state(wait_for_session,
+					   StateData#state{resource = R2, jid = JID})
+		    end
 	    end;
 	_ ->
 	    fsm_next_state(wait_for_bind, StateData)
@@ -1051,7 +1099,9 @@ session_established2(El, StateData) ->
 			end;
 		    "iq" ->
 			case jlib:iq_query_info(NewEl) of
-			    #iq{xmlns = ?NS_PRIVACY} = IQ ->
+			    #iq{xmlns = Xmlns} = IQ
+			    when Xmlns == ?NS_PRIVACY;
+				 Xmlns == ?NS_BLOCKING ->
 				process_privacy_iq(
 				  FromJID, ToJID, IQ, StateData);
 			    _ ->
@@ -1283,6 +1333,9 @@ handle_info({route, From, To, Packet}, StateName, StateData) ->
 				send_element(StateData, PrivPushEl),
 				{false, Attrs, StateData#state{privacy_list = NewPL}}
 			end;
+		    [{blocking, What}] ->
+			route_blocking(What, StateData),
+			{false, Attrs, StateData};
 		    _ ->
 			{false, Attrs, StateData}
 		end;
@@ -1732,10 +1785,10 @@ presence_update(From, Packet, StateData) ->
 	    FromUnavail = (StateData#state.pres_last == undefined) or
 		StateData#state.pres_invis,
 	    ?DEBUG("from unavail = ~p~n", [FromUnavail]),
+	    NewStateData = StateData#state{pres_last = Packet,
+                                           pres_invis = false,
+                                           pres_timestamp = Timestamp},
 	    NewState =
-                NewStateData = StateData#state{pres_last = Packet,
-                                               pres_invis = false,
-                                               pres_timestamp = Timestamp},
 		if
 		    FromUnavail ->
 			ejabberd_hooks:run(user_available_hook,
@@ -2239,6 +2292,51 @@ bounce_messages() ->
     after 0 ->
 	    ok
     end.
+
+%%%----------------------------------------------------------------------
+%%% XEP-0191
+%%%----------------------------------------------------------------------
+
+route_blocking(What, StateData) ->
+    SubEl =
+	case What of
+	    {block, JIDs} ->
+		{xmlelement, "block",
+		 [{"xmlns", ?NS_BLOCKING}],
+		 lists:map(
+		   fun(JID) ->
+			   {xmlelement, "item",
+			    [{"jid", jlib:jid_to_string(JID)}],
+			    []}
+				       end, JIDs)};
+	    {unblock, JIDs} ->
+		{xmlelement, "unblock",
+		 [{"xmlns", ?NS_BLOCKING}],
+		 lists:map(
+		   fun(JID) ->
+			   {xmlelement, "item",
+			    [{"jid", jlib:jid_to_string(JID)}],
+			    []}
+		   end, JIDs)};
+	    unblock_all ->
+		{xmlelement, "unblock",
+		 [{"xmlns", ?NS_BLOCKING}], []}
+	end,
+    PrivPushIQ =
+	#iq{type = set, xmlns = ?NS_BLOCKING,
+	    id = "push",
+	    sub_el = [SubEl]},
+    PrivPushEl =
+	jlib:replace_from_to(
+	  jlib:jid_remove_resource(
+	    StateData#state.jid),
+	  StateData#state.jid,
+	  jlib:iq_to_xml(PrivPushIQ)),
+    send_element(StateData, PrivPushEl),
+    %% No need to replace active privacy list here,
+    %% blocking pushes are always accompanied by
+    %% Privacy List pushes
+    ok.
 
 %%%----------------------------------------------------------------------
 %%% JID Set memory footprint reduction code

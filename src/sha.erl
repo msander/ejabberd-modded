@@ -5,7 +5,7 @@
 %%% Created : 20 Dec 2002 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -47,7 +47,7 @@ start() ->
 	  end,
     case Res of
 	ok ->
-	    Port = open_port({spawn, ?DRIVER}, [binary]),
+	    Port = open_port({spawn, atom_to_list(?DRIVER)}, [binary]),
 	    register(?DRIVER, Port);
 	{error, Reason} ->
 	    ?CRITICAL_MSG("unable to load driver '~s': ~s",

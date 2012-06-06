@@ -11,11 +11,11 @@
 %%% under the License.
 %%% 
 %%% The Initial Developer of the Original Code is ProcessOne.
-%%% Portions created by ProcessOne are Copyright 2006-2011, ProcessOne
+%%% Portions created by ProcessOne are Copyright 2006-2012, ProcessOne
 %%% All Rights Reserved.''
-%%% This software is copyright 2006-2011, ProcessOne.
+%%% This software is copyright 2006-2012, ProcessOne.
 %%%
-%%% @copyright 2006-2011 ProcessOne
+%%% @copyright 2006-2012 ProcessOne
 %%% @author Christophe Romain <christophe.romain@process-one.net>
 %%%   [http://www.process-one.net/]
 %%% @version {@vsn}, {@date} {@time}
@@ -219,6 +219,7 @@ init([ServerHost, Opts]) ->
     ejabberd_router:register_route(Host),
     update_node_database(Host, ServerHost),
     update_state_database(Host, ServerHost),
+    put(server_host, ServerHost), % not clean, but needed to plug hooks at any location
     init_nodes(Host, ServerHost, NodeTree, Plugins),
     State = #state{host = Host,
 		server_host = ServerHost,
@@ -1211,7 +1212,7 @@ iq_get_vcard(Lang) ->
       [{xmlcdata,
 	translate:translate(Lang,
 			    "ejabberd Publish-Subscribe module") ++
-			    "\nCopyright (c) 2004-2011 ProcessOne"}]}].
+			    "\nCopyright (c) 2004-2012 ProcessOne"}]}].
 
 iq_pubsub(Host, ServerHost, From, IQType, SubEl, Lang) ->
     iq_pubsub(Host, ServerHost, From, IQType, SubEl, Lang, all, plugins(ServerHost)).
@@ -1299,7 +1300,7 @@ iq_pubsub(Host, ServerHost, From, IQType, SubEl, Lang, Access, Plugins) ->
 		{get, "subscriptions"} ->
 		    get_subscriptions(Host, Node, From, Plugins);
 		{get, "affiliations"} ->
-		    get_affiliations(Host, From, Plugins);
+		    get_affiliations(Host, Node, From, Plugins);
 		{get, "options"} ->
 		    SubID = xml:get_attr_s("subid", Attrs),
 		    JID = xml:get_attr_s("jid", Attrs),
@@ -1783,13 +1784,16 @@ create_node(Host, ServerHost, Node, Owner, GivenType, Access, Configuration) ->
 	    case transaction(CreateNode, transaction) of
 		{result, {NodeId, SubsByDepth, {Result, broadcast}}} ->
 		    broadcast_created_node(Host, Node, NodeId, Type, NodeOptions, SubsByDepth),
+		    ejabberd_hooks:run(pubsub_create_node, ServerHost, [ServerHost, Host, Node, NodeId, NodeOptions]),
 		    case Result of
 			default -> {result, Reply};
 			_ -> {result, Result}
 		    end;
-		{result, {_NodeId, _SubsByDepth, default}} ->
+		{result, {NodeId, _SubsByDepth, default}} ->
+		    ejabberd_hooks:run(pubsub_create_node, ServerHost, [ServerHost, Host, Node, NodeId, NodeOptions]),
 		    {result, Reply};
-		{result, {_NodeId, _SubsByDepth, Result}} ->
+		{result, {NodeId, _SubsByDepth, Result}} ->
+		    ejabberd_hooks:run(pubsub_create_node, ServerHost, [ServerHost, Host, Node, NodeId, NodeOptions]),
 		    {result, Result};
 		Error ->
 		    %% in case we change transaction to sync_dirty...
@@ -1834,27 +1838,38 @@ delete_node(Host, Node, Owner) ->
 		    end
 	     end,
     Reply = [],
+    ServerHost = get(server_host), % not clean, but prevent many API changes
     case transaction(Host, Node, Action, transaction) of
-	{result, {_, {SubsByDepth, {Result, broadcast, Removed}}}} ->
+	{result, {_TNode, {SubsByDepth, {Result, broadcast, Removed}}}} ->
 	    lists:foreach(fun({RNode, _RSubscriptions}) ->
 		{RH, RN} = RNode#pubsub_node.nodeid,
 		NodeId = RNode#pubsub_node.id,
 		Type = RNode#pubsub_node.type,
 		Options = RNode#pubsub_node.options,
-		broadcast_removed_node(RH, RN, NodeId, Type, Options, SubsByDepth)
+		broadcast_removed_node(RH, RN, NodeId, Type, Options, SubsByDepth),
+		ejabberd_hooks:run(pubsub_delete_node, ServerHost, [ServerHost, RH, RN, NodeId])
 	    end, Removed),
 	    case Result of
 		default -> {result, Reply};
 		_ -> {result, Result}
 	    end;
-	{result, {_, {_, {Result, _Removed}}}} ->
+	{result, {_TNode, {_, {Result, Removed}}}} ->
+	    lists:foreach(fun({RNode, _RSubscriptions}) ->
+		{RH, RN} = RNode#pubsub_node.nodeid,
+		NodeId = RNode#pubsub_node.id,
+		ejabberd_hooks:run(pubsub_delete_node, ServerHost, [ServerHost, RH, RN, NodeId])
+	    end, Removed),
 	    case Result of
 		default -> {result, Reply};
 		_ -> {result, Result}
 	    end;
-	{result, {_, {_, default}}} ->
+	{result, {TNode, {_, default}}} ->
+	    NodeId = TNode#pubsub_node.id,
+	    ejabberd_hooks:run(pubsub_delete_node, ServerHost, [ServerHost, Host, Node, NodeId]),
 	    {result, Reply};
-	{result, {_, {_, Result}}} ->
+	{result, {TNode, {_, Result}}} ->
+	    NodeId = TNode#pubsub_node.id,
+	    ejabberd_hooks:run(pubsub_delete_node, ServerHost, [ServerHost, Host, Node, NodeId]),
 	    {result, Result};
 	Error ->
 	    Error
@@ -2021,9 +2036,12 @@ publish_item(Host, ServerHost, Node, Publisher, ItemId, Payload) ->
 		    Features = features(Type),
 		    PublishFeature = lists:member("publish", Features),
 		    PublishModel = get_option(Options, publish_model),
-		    MaxItems = max_items(Host, Options),
 		    DeliverPayloads = get_option(Options, deliver_payloads),
 		    PersistItems = get_option(Options, persist_items),
+		    MaxItems = case PersistItems of
+			false -> 0;
+			true -> max_items(Host, Options)
+		    end,
 		    PayloadCount = payload_xmlelements(Payload),
 		    PayloadSize = size(term_to_binary(Payload))-2, % size(term_to_binary([])) == 2
 		    PayloadMaxSize = get_option(Options, max_payload_size),
@@ -2061,13 +2079,20 @@ publish_item(Host, ServerHost, Node, Publisher, ItemId, Payload) ->
 	    NodeId = TNode#pubsub_node.id,
 	    Type = TNode#pubsub_node.type,
 	    Options = TNode#pubsub_node.options,
-	    BroadcastPayload = case Broadcast of
-		default -> Payload;
-		broadcast -> Payload;
-		PluginPayload -> PluginPayload
-	    end,
-	    broadcast_publish_item(Host, Node, NodeId, Type, Options, Removed, ItemId, jlib:jid_tolower(Publisher), BroadcastPayload),
-	    set_cached_item(Host, NodeId, ItemId, Publisher, Payload),
+	    case get_option(Options, deliver_notifications) of
+			true ->
+				BroadcastPayload = case Broadcast of
+					default -> Payload;
+					broadcast -> Payload;
+					PluginPayload -> PluginPayload
+				end,
+				broadcast_publish_item(Host, Node, NodeId, Type, Options,
+					Removed, ItemId, jlib:jid_tolower(Publisher),
+					BroadcastPayload);
+			false ->
+				ok
+		end,
+		set_cached_item(Host, NodeId, ItemId, Publisher, Payload),
 	    case Result of
 		default -> {result, Reply};
 		_ -> {result, Result}
@@ -2098,8 +2123,10 @@ publish_item(Host, ServerHost, Node, Publisher, ItemId, Payload) ->
 	    case lists:member("auto-create", features(Type)) of
 		true ->
 		    case create_node(Host, ServerHost, Node, Publisher, Type) of
-			{result, _} ->
-			    publish_item(Host, ServerHost, Node, Publisher, ItemId, Payload);
+			{result, [{xmlelement, "pubsub", [{"xmlns", ?NS_PUBSUB}],
+			  [{xmlelement, "create", [{"node", NewNode}], []}]}]} ->
+			    publish_item(Host, ServerHost,  list_to_binary(NewNode),
+				    Publisher, ItemId, Payload);
 			_ ->
 			    {error, ?ERR_ITEM_NOT_FOUND}
 		    end;
@@ -2317,7 +2344,7 @@ get_allowed_items_call(Host, NodeIdx, From, Type, Options, Owners) ->
 %%	 Number = last | integer()
 %% @doc <p>Resend the items of a node to the user.</p>
 %% @todo use cache-last-item feature
-send_items(Host, Node, NodeId, Type, LJID, last) ->
+send_items(Host, Node, NodeId, Type, {U,S,R} = LJID, last) ->
     case get_cached_item(Host, NodeId) of
 	undefined ->
 	    send_items(Host, Node, NodeId, Type, LJID, 1);
@@ -2326,9 +2353,22 @@ send_items(Host, Node, NodeId, Type, LJID, last) ->
 	    Stanza = event_stanza_with_delay(
 		[{xmlelement, "items", nodeAttr(Node),
 		  itemsEls([LastItem])}], ModifNow, ModifUSR),
-	    ejabberd_router:route(service_jid(Host), jlib:make_jid(LJID), Stanza)
+	    case is_tuple(Host) of
+	        false ->
+	            ejabberd_router:route(service_jid(Host), jlib:make_jid(LJID), Stanza);
+	        true ->
+	            case ejabberd_sm:get_session_pid(U,S,R) of
+	                C2SPid when is_pid(C2SPid) ->
+	                    ejabberd_c2s:broadcast(C2SPid,
+	                        {pep_message, binary_to_list(Node)++"+notify"},
+	                        _Sender = service_jid(Host),
+	                        Stanza);
+	                _ ->
+	                    ok
+	            end
+	    end
     end;
-send_items(Host, Node, NodeId, Type, LJID, Number) ->
+send_items(Host, Node, NodeId, Type, {U,S,R} = LJID, Number) ->
     ToSend = case node_action(Host, Type, get_items, [NodeId, LJID]) of
 	{result, []} -> 
 	    [];
@@ -2351,7 +2391,20 @@ send_items(Host, Node, NodeId, Type, LJID, Number) ->
 		[{xmlelement, "items", nodeAttr(Node),
 		  itemsEls(ToSend)}])
     end,
-    ejabberd_router:route(service_jid(Host), jlib:make_jid(LJID), Stanza).
+    case is_tuple(Host) of
+        false ->
+            ejabberd_router:route(service_jid(Host), jlib:make_jid(LJID), Stanza);
+        true ->
+            case ejabberd_sm:get_session_pid(U,S,R) of
+	                C2SPid when is_pid(C2SPid) ->
+	                    ejabberd_c2s:broadcast(C2SPid,
+	                        {pep_message, binary_to_list(Node)++"+notify"},
+	                        _Sender = service_jid(Host),
+	                        Stanza);
+	                _ ->
+	                    ok
+	            end
+    end.
 
 %% @spec (Host, JID, Plugins) -> {error, Reason} | {result, Response}
 %%	 Host = host()
@@ -2360,7 +2413,7 @@ send_items(Host, Node, NodeId, Type, LJID, Number) ->
 %%	 Reason = stanzaError()
 %%	 Response = [pubsubIQResponse()]
 %% @doc <p>Return the list of affiliations as an XMPP response.</p>
-get_affiliations(Host, JID, Plugins) when is_list(Plugins) ->
+get_affiliations(Host, <<>>, JID, Plugins) when is_list(Plugins) ->
     Result = lists:foldl(
 	       fun(Type, {Status, Acc}) ->
 		       Features = features(Type),
@@ -2389,6 +2442,40 @@ get_affiliations(Host, JID, Plugins) when is_list(Plugins) ->
 	{Error, _} ->
 	    Error
     end;
+get_affiliations(Host, NodeId, JID, Plugins) when is_list(Plugins) ->
+    Result = lists:foldl(
+	       fun(Type, {Status, Acc}) ->
+		       Features = features(Type),
+		       RetrieveFeature = lists:member("retrieve-affiliations", Features),
+		       if
+			   not RetrieveFeature ->
+			       %% Service does not support retreive affiliatons
+			       {{error, extended_error(?ERR_FEATURE_NOT_IMPLEMENTED, unsupported, "retrieve-affiliations")}, Acc};
+			   true ->
+			       {result, Affiliations} = node_action(Host, Type, get_entity_affiliations, [Host, JID]),
+			       {Status, [Affiliations|Acc]}
+		       end
+	       end, {ok, []}, Plugins),
+    case Result of
+	{ok, Affiliations} ->
+	    Entities = lists:flatmap(
+			 fun({_, none}) -> [];
+			    ({#pubsub_node{nodeid = {_, Node}}, Affiliation})
+			      when NodeId == Node ->
+				 [{xmlelement, "affiliation",
+				   [{"affiliation", affiliation_to_string(Affiliation)}|nodeAttr(Node)],
+				   []}];
+				(_) ->
+				    []
+			 end, lists:usort(lists:flatten(Affiliations))),
+	    {result, [{xmlelement, "pubsub", [{"xmlns", ?NS_PUBSUB}],
+		       [{xmlelement, "affiliations", [],
+			 Entities}]}]};
+	{Error, _} ->
+	    Error
+    end.
+
+
 get_affiliations(Host, Node, JID) ->
     Action = fun(#pubsub_node{type = Type, id = NodeId}) ->
 		     Features = features(Type),

@@ -1,5 +1,5 @@
 /*
- * ejabberd, Copyright (C) 2002-2011   ProcessOne
+ * ejabberd, Copyright (C) 2002-2012   ProcessOne
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -29,6 +29,16 @@
 #define NAMEPREP_COMMAND 1
 #define NODEPREP_COMMAND 2
 #define RESOURCEPREP_COMMAND 3
+
+/*
+ * R15B changed several driver callbacks to use ErlDrvSizeT and
+ * ErlDrvSSizeT typedefs instead of int.
+ * This provides missing typedefs on older OTP versions.
+ */
+#if ERL_DRV_EXTENDED_MAJOR_VERSION < 2
+typedef int ErlDrvSizeT;
+typedef int ErlDrvSSizeT;
+#endif
 
 typedef struct {
       ErlDrvPort port;
@@ -194,10 +204,10 @@ static int compose(int ch1, int ch2)
 
 
 
-static int stringprep_erl_control(ErlDrvData drv_data,
+static ErlDrvSSizeT stringprep_erl_control(ErlDrvData drv_data,
 				  unsigned int command,
-				  char *buf, int len,
-				  char **rbuf, int rlen)
+				  char *buf, ErlDrvSizeT len,
+				  char **rbuf, ErlDrvSizeT rlen)
 {
    int i, j, pos=1;
    unsigned char c;
@@ -400,7 +410,19 @@ ErlDrvEntry stringprep_driver_entry = {
    NULL,			/* handle */
    stringprep_erl_control,	/* F_PTR control, port_command callback */
    NULL,			/* F_PTR timeout, reserved */
-   NULL				/* F_PTR outputv, reserved */
+   NULL,			/* F_PTR outputv, reserved */
+  /* Added in Erlang/OTP R15B: */
+  NULL,                 /* ready_async */
+  NULL,                 /* flush */
+  NULL,                 /* call */
+  NULL,                 /* event */
+  ERL_DRV_EXTENDED_MARKER,        /* extended_marker */
+  ERL_DRV_EXTENDED_MAJOR_VERSION, /* major_version */
+  ERL_DRV_EXTENDED_MINOR_VERSION, /* minor_version */
+  0,                    /* driver_flags */
+  NULL,                 /* handle2 */
+  NULL,                 /* process_exit */
+  NULL                  /* stop_select */
 };
 
 DRIVER_INIT(stringprep_erl) /* must match name in driver_entry */

@@ -66,6 +66,9 @@
 \newcommand{\module}[1]{\texttt{#1}}
 \newcommand{\modadhoc}{\module{mod\_adhoc}}
 \newcommand{\modannounce}{\module{mod\_announce}}
+\newcommand{\modannounceodbc}{\module{mod\_announce\_odbc}}
+\newcommand{\modblocking}{\module{mod\_blocking}}
+\newcommand{\modblockingodbc}{\module{mod\_blocking\_odbc}}
 \newcommand{\modcaps}{\module{mod\_caps}}
 \newcommand{\modconfigure}{\module{mod\_configure}}
 \newcommand{\moddisco}{\module{mod\_disco}}
@@ -73,9 +76,11 @@
 \newcommand{\modhttpbind}{\module{mod\_http\_bind}}
 \newcommand{\modhttpfileserver}{\module{mod\_http\_fileserver}}
 \newcommand{\modirc}{\module{mod\_irc}}
+\newcommand{\modircodbc}{\module{mod\_irc\_odbc}}
 \newcommand{\modlast}{\module{mod\_last}}
 \newcommand{\modlastodbc}{\module{mod\_last\_odbc}}
 \newcommand{\modmuc}{\module{mod\_muc}}
+\newcommand{\modmucodbc}{\module{mod\_muc\_odbc}}
 \newcommand{\modmuclog}{\module{mod\_muc\_log}}
 \newcommand{\modoffline}{\module{mod\_offline}}
 \newcommand{\modofflineodbc}{\module{mod\_offline\_odbc}}
@@ -94,6 +99,7 @@
 \newcommand{\modrosterodbc}{\module{mod\_roster\_odbc}}
 \newcommand{\modservicelog}{\module{mod\_service\_log}}
 \newcommand{\modsharedroster}{\module{mod\_shared\_roster}}
+\newcommand{\modsharedrosterodbc}{\module{mod\_shared\_roster\_odbc}}
 \newcommand{\modsharedrosterldap}{\module{mod\_shared\_roster\_ldap}}
 \newcommand{\modsic}{\module{mod\_sic}}
 \newcommand{\modstats}{\module{mod\_stats}}
@@ -102,6 +108,7 @@
 \newcommand{\modvcardldap}{\module{mod\_vcard\_ldap}}
 \newcommand{\modvcardodbc}{\module{mod\_vcard\_odbc}}
 \newcommand{\modvcardxupdate}{\module{mod\_vcard\_xupdate}}
+\newcommand{\modvcardxupdateodbc}{\module{mod\_vcard\_xupdate\_odbc}}
 \newcommand{\modversion}{\module{mod\_version}}
 
 %% Contributed modules
@@ -249,8 +256,9 @@ and for example it doesn't read the file ejabberdctl.cfg.
 On a *nix system, if you want ejabberd to be started as daemon at boot time,
 copy \term{ejabberd.init} from the 'bin' directory to something like \term{/etc/init.d/ejabberd}
 (depending on your distribution).
-Create a system user called \term{ejabberd};
-it will be used by the script to start the server.
+Create a system user called \term{ejabberd},
+give it write access to the directories \term{database/} and \term{logs/}, and set that as home;
+the script will start the server with that user.
 Then you can call \term{/etc/inid.d/ejabberd start} as root to start the server.
 
 If \term{ejabberd} doesn't start correctly in Windows,
@@ -313,7 +321,7 @@ To compile \ejabberd{} on a `Unix-like' operating system, you need:
 \item GNU Make
 \item GCC
 \item Libexpat 1.95 or higher
-\item Erlang/OTP R10B-9 or higher. The recommended versions are R12B-5 and R13B04.
+\item Erlang/OTP R10B-9 or higher. The recommended versions are R13B04 and R14B04.
   Don't use R14A or R14B because \footahref{http://www.erlang.org/cgi-bin/ezmlm-cgi/4/54598}{they have a bug}.
 \item OpenSSL 0.9.8 or higher, for STARTTLS, SASL and SSL encryption.
 \item Zlib 1.2.3 or higher, for Stream Compression support (\xepref{0138}). Optional.
@@ -567,24 +575,24 @@ werl -s ejabberd -name ejabberd
 %TODO: how to compile database support on windows?
 
 
-\makesection{initialadmin}{Create a XMPP Account for Administration}
+\makesection{initialadmin}{Create an XMPP Account for Administration}
 
-You need a XMPP account and grant him administrative privileges
+You need an XMPP account and grant him administrative privileges
 to enter the \ejabberd{} Web Admin:
 \begin{enumerate}
-\item Register a XMPP account on your \ejabberd{} server, for example \term{admin1@example.org}.
-  There are two ways to register a XMPP account:
+\item Register an XMPP account on your \ejabberd{} server, for example \term{admin1@example.org}.
+  There are two ways to register an XMPP account:
   \begin{enumerate}
   \item Using \term{ejabberdctl}\ind{ejabberdctl} (see section~\ref{ejabberdctl}):
 \begin{verbatim}
 ejabberdctl register admin1 example.org FgT5bk3
 \end{verbatim}
-  \item Using a XMPP client and In-Band Registration (see section~\ref{modregister}).
+  \item Using an XMPP client and In-Band Registration (see section~\ref{modregister}).
   \end{enumerate}
 \item Edit the \ejabberd{} configuration file to give administration rights to the XMPP account you created:
 \begin{verbatim}
-{acl, admins, {user, "admin1", "example.org"}}.
-{access, configure, [{allow, admins}]}.
+{acl, admin, {user, "admin1", "example.org"}}.
+{access, configure, [{allow, admin}]}.
 \end{verbatim}
   You can grant administrative privileges to many XMPP accounts,
   and also to accounts in other XMPP servers.
@@ -824,7 +832,7 @@ The available modules, their purpose and the options allowed by each one are:
     Options: \texttt{certfile}
   \titem{\texttt{ejabberd\_http}}
     Handles incoming HTTP connections.\\
-    Options: \texttt{captcha}, \texttt{certfile}, \texttt{http\_bind}, \texttt{http\_poll},
+    Options: \texttt{captcha}, \texttt{certfile}, \texttt{default\_host}, \texttt{http\_bind}, \texttt{http\_poll},
     \texttt{request\_handlers}, \texttt{tls}, \texttt{trusted\_proxies}, \texttt{web\_admin}\\
 \end{description}
 
@@ -845,6 +853,11 @@ This is a detailed description of each option allowed by the listening modules:
     Simple web page that allows a user to fill a CAPTCHA challenge (see section \ref{captcha}).
   \titem{\{certfile, Path\}} Full path to a file containing the default SSL certificate.
     To define a certificate file specific for a given domain, use the global option \term{domain\_certfile}.
+  \titem{\{default\_host, undefined|HostName\}}
+    If the HTTP request received by ejabberd contains the HTTP header \term{Host}
+    with an ambiguous virtual host that doesn't match any one defined in ejabberd (see \ref{hostnames}),
+    then this configured HostName is set as the request Host.
+    The default value of this option is: \term{undefined}.
   \titem{\{hosts, [Hostname, ...], [HostOption, ...]\}} \ind{options!hosts}
     The external Jabber component that connects to this \term{ejabberd\_service}
     can serve one or more hostnames.
@@ -1214,11 +1227,45 @@ The following authentication methods are supported by \ejabberd{}:
 
 Account creation is only supported by internal, external and odbc methods.
 
+The option \option{resource\_conflict} defines the action when a client attempts to
+login to an account with a resource that is already connected.
+The option syntax is:
+\esyntax{\{resource\_conflict, setresource|closenew|closeold\}.}
+The possible values match exactly the three possibilities described in
+\footahref{http://tools.ietf.org/html/rfc6120\#section-7.7.2.2}{XMPP Core: section 7.7.2.2}.
+The default value is \term{closeold}.
+If the client uses old Jabber Non-SASL authentication (\xepref{0078}),
+then this option is not respected, and the action performed is \term{closeold}.
+
+The option \option{fqdn} allows you to define the Fully Qualified Domain Name
+of the machine, in case it isn't detected automatically.
+The FQDN is used to authenticate some clients that use the DIGEST-MD5 SASL mechanism.
+The option syntax is:
+\esyntax{\{fqdn, undefined|FqdnString\}.}
+
 \makesubsubsection{internalauth}{Internal}
 \ind{internal authentication}\ind{Mnesia}
 
 \ejabberd{} uses its internal Mnesia database as the default authentication method.
 The value \term{internal} will enable the internal authentication method.
+
+The option \term{\{auth\_password\_format, plain|scram\}}
+defines in what format the users passwords are stored:
+\begin{description}
+    \titem{plain}
+    The password is stored as plain text in the database.
+    This is risky because the passwords can be read if your database gets compromised.
+    This is the default value.
+    This format allows clients to authenticate using:
+    the old Jabber Non-SASL (\xepref{0078}), \term{SASL PLAIN},
+    \term{SASL DIGEST-MD5}, and \term{SASL SCRAM-SHA-1}.
+
+    \titem{scram}
+    The password is not stored, only some information that allows to verify the hash provided by the client.
+    It is impossible to obtain the original plain password from the stored information;
+    for this reason, when this value is configured it cannot be changed to \term{plain} anymore.
+    This format allows clients to authenticate using: \term{SASL PLAIN} and \term{SASL SCRAM-SHA-1}.
+\end{description}
 
 Examples:
 \begin{itemize}
@@ -1228,9 +1275,10 @@ Examples:
 {host_config, "example.org", [{auth_method, [internal]}]}.
 {host_config, "example.net", [{auth_method, [ldap]}]}.
 \end{verbatim}
-\item To use internal authentication on all virtual hosts:
+\item To use internal authentication with hashed passwords on all virtual hosts:
 \begin{verbatim}
 {auth_method, internal}.
+{auth_password_format, scram}.
 \end{verbatim}
 \end{itemize}
 
@@ -1456,10 +1504,10 @@ declarations of ACLs in the configuration file have the following syntax:
 {acl, tests, {user_regexp, "^test[0-9]*$"}}.
 \end{verbatim}
 %$
-\titem{\{user\_regexp, UserRegexp, Server\}} Matches any user with a name
+\titem{\{user\_regexp, Regexp, Server\}} Matches any user with a name
   that matches \term{Regexp} at server \term{Server}. Example:
 \begin{verbatim}
-{acl, tests, {user_Userregexp, "^test", "example.org"}}.
+{acl, tests, {user_regexp, "^test", "example.org"}}.
 \end{verbatim}
 \titem{\{server\_regexp, Regexp\}} Matches any JID from the server that
   matches \term{Regexp}. Example:
@@ -1475,7 +1523,7 @@ declarations of ACLs in the configuration file have the following syntax:
   with a name that matches \term{UserRegexp} at any server that matches
   \term{ServerRegexp}. Example:
 \begin{verbatim}
-{acl, yohzik, {node_regexp, "^yohzik$", "^example.(com|org)$"}}.
+{acl, yozhik, {node_regexp, "^yozhik$", "^example.(com|org)$"}}.
 \end{verbatim}
 \titem{\{user\_glob, Glob\}}
 \titem{\{user\_glob, Glob, Server\}}
@@ -1633,7 +1681,7 @@ The configurable options are:
 \begin{description}
   \titem{\{captcha\_cmd, Path\}} 
   Full path to a script that generates the image.
-  The default value is an empty string: \term{""}
+  The default value disables the feature: \term{undefined}
   \titem{\{captcha\_host, ProtocolHostPort\}} 
   ProtocolHostPort is a string with the host, and optionally the Protocol and Port number.
   It must identify where ejabberd listens for CAPTCHA requests.
@@ -1867,6 +1915,7 @@ The following LDAP servers are tested with \ejabberd{}:
 \item \footahref{http://www.microsoft.com/activedirectory/}{Active Directory}
   (see section~\ref{ad})
 \item \footahref{http://www.openldap.org/}{OpenLDAP}
+\item \footahref{http://www.communigate.com/}{CommuniGate Pro}
 \item Normally any LDAP compatible server should work; inform us about your
   success with a not-listed server so that we can list it here.
 \end{itemize}
@@ -2252,6 +2301,16 @@ This option specifies whether to verify LDAP server certificate or not when TLS 
 When \term{hard} is enabled \ejabberd{} doesn't proceed if a certificate is invalid.
 When \term{soft} is enabled \ejabberd{} proceeds even if check fails.
 The default is \term{false} which means no checks are performed.
+\titem{\{ldap\_tls\_cacertfile, Path\}} \ind{options!ldap\_tls\_cacertfile}
+Path to file containing PEM encoded CA certificates. This option is needed
+(and required) when TLS verification is enabled.
+\titem{\{ldap\_tls\_depth, Number\}} \ind{options!ldap\_tls\_depth}
+Specifies the maximum verification depth when TLS verification is enabled,
+i.e. how far in a chain of certificates the verification process can proceed
+before the verification is considered to fail.
+Peer certificate = 0, CA certificate = 1, higher level CA certificate = 2, etc.
+The value 2 thus means that a chain can at most contain peer cert,
+CA cert, next CA cert, and an additional CA cert. The default value is 1.
 \titem{\{ldap\_port, Number\}} \ind{options!ldap\_port}Port to connect to your LDAP server.
 The default port is~389 if encryption is disabled; and 636 if encryption is enabled.
 If you configure a value, it is stored in \ejabberd{}'s database.
@@ -2261,6 +2320,7 @@ the value previously stored in the database will be used instead of the default 
   is~\term{""} which means `anonymous connection'.
 \titem{\{ldap\_password, Password\}} \ind{options!ldap\_password}Bind password. The default
   value is \term{""}.
+\titem{\{ldap\_deref\_aliases, never|always|finding|searching\}} \ind{options!ldap\_deref\_aliases} Whether or not to dereference aliases. The default is \term{never}.
 \end{description}
 
 Example:
@@ -2524,6 +2584,10 @@ The following table lists all modules included in \ejabberd{}.
     \hline
     \hline \modadhoc{} & Ad-Hoc Commands (\xepref{0050}) &  \\
     \hline \ahrefloc{modannounce}{\modannounce{}} & Manage announcements & recommends \modadhoc{} \\
+    \hline \ahrefloc{modannounce}{\modannounceodbc{}} & Manage announcements & recommends \modadhoc{} \\
+    & & supported DB (*) \\
+    \hline \modblocking{} & Simple Communications Blocking (\xepref{0191}) & \modprivacy{} \\
+    \hline \modblockingodbc{} & Simple Communications Blocking (\xepref{0191}) & \modprivacyodbc{} \\
     \hline \modcaps{} &  Entity Capabilities (\xepref{0115}) & \\
     \hline \modconfigure{} & Server configuration using Ad-Hoc & \modadhoc{} \\
     \hline \ahrefloc{moddisco}{\moddisco{}} & Service Discovery (\xepref{0030}) &  \\
@@ -2531,16 +2595,18 @@ The following table lists all modules included in \ejabberd{}.
     \hline \ahrefloc{modhttpbind}{\modhttpbind{}} & XMPP over Bosh service (HTTP Binding) &  \\
     \hline \ahrefloc{modhttpfileserver}{\modhttpfileserver{}} & Small HTTP file server &  \\
     \hline \ahrefloc{modirc}{\modirc{}} & IRC transport &  \\
+    \hline \ahrefloc{modirc}{\modircodbc{}} & IRC transport & supported DB (*) \\
     \hline \ahrefloc{modlast}{\modlast{}} & Last Activity (\xepref{0012}) &  \\
     \hline \ahrefloc{modlast}{\modlastodbc{}} & Last Activity (\xepref{0012}) & supported DB (*) \\
     \hline \ahrefloc{modmuc}{\modmuc{}} & Multi-User Chat (\xepref{0045}) &  \\
-    \hline \ahrefloc{modmuclog}{\modmuclog{}} & Multi-User Chat room logging & \modmuc{} \\
+    \hline \ahrefloc{modmuc}{\modmucodbc{}} & Multi-User Chat (\xepref{0045}) & supported DB (*) \\
+    \hline \ahrefloc{modmuclog}{\modmuclog{}} & Multi-User Chat room logging & \modmuc{} or \modmucodbc{} \\
     \hline \ahrefloc{modoffline}{\modoffline{}} & Offline message storage (\xepref{0160}) &  \\
     \hline \ahrefloc{modoffline}{\modofflineodbc{}} & Offline message storage (\xepref{0160}) & supported DB (*) \\
     \hline \ahrefloc{modping}{\modping{}} & XMPP Ping and periodic keepalives (\xepref{0199}) &  \\
-    \hline \ahrefloc{modprescounter}{\modprivacy{}} & Detect presence subscription flood &  \\
-    \hline \ahrefloc{modprivacy}{\modprivacy{}} & Blocking Communication (XMPP IM) &  \\
-    \hline \ahrefloc{modprivacy}{\modprivacyodbc{}} & Blocking Communication (XMPP IM) & supported DB (*) \\
+    \hline \ahrefloc{modprescounter}{\modprescounter{}} & Detect presence subscription flood &  \\
+    \hline \ahrefloc{modprivacy}{\modprivacy{}} & Blocking Communication (\xepref{0016}) &  \\
+    \hline \ahrefloc{modprivacy}{\modprivacyodbc{}} & Blocking Communication (\xepref{0016}) & supported DB (*) \\
     \hline \ahrefloc{modprivate}{\modprivate{}} & Private XML Storage (\xepref{0049}) &  \\
     \hline \ahrefloc{modprivate}{\modprivateodbc{}} & Private XML Storage (\xepref{0049}) & supported DB (*) \\
     \hline \ahrefloc{modproxy}{\modproxy{}} & SOCKS5 Bytestreams (\xepref{0065}) &  \\
@@ -2553,6 +2619,8 @@ The following table lists all modules included in \ejabberd{}.
     \hline \ahrefloc{modservicelog}{\modservicelog{}} & Copy user messages to logger service &  \\
     \hline \ahrefloc{modsharedroster}{\modsharedroster{}} & Shared roster management & \modroster{} or \\
     & & \modrosterodbc\\
+    \hline \ahrefloc{modsharedroster}{\modsharedrosterodbc{}} & Shared roster management & supported DB (*) and\\
+    & & \modroster{} or \modrosterodbc\\
     \hline \ahrefloc{modsharedrosterldap}{\modsharedrosterldap{}} & LDAP Shared roster management & \modroster{} or \\
     & & \modrosterodbc\\
     \hline \ahrefloc{modsic}{\modsic{}} & Server IP Check (\xepref{0279}) &  \\
@@ -2562,6 +2630,7 @@ The following table lists all modules included in \ejabberd{}.
     \hline \ahrefloc{modvcardldap}{\modvcardldap{}} & vcard-temp (\xepref{0054}) & LDAP server \\
     \hline \ahrefloc{modvcard}{\modvcardodbc{}} & vcard-temp (\xepref{0054}) & supported DB (*) \\
     \hline \ahrefloc{modvcardxupdate}{\modvcardxupdate{}} & vCard-Based Avatars (\xepref{0153}) & \modvcard{} or \modvcardodbc{} \\
+    \hline \ahrefloc{modvcardxupdate}{\modvcardxupdateodbc{}} & vCard-Based Avatars (\xepref{0153}) & \modvcard{} or \modvcardodbc{} \\
     \hline \ahrefloc{modversion}{\modversion{}} & Software Version (\xepref{0092}) &  \\
     \hline
   \end{tabular}
@@ -2592,10 +2661,16 @@ database for the following data:
 \item Offline messages: Use \term{mod\_offline\_odbc} instead of
   \term{mod\_offline}.
 \item Rosters: Use \term{mod\_roster\_odbc} instead of \term{mod\_roster}.
+\item Shared Rosters: Use \term{mod\_shared\_roster\_odbc} instead of \term{mod\_shared\_roster}.
 \item Users' VCARD: Use \term{mod\_vcard\_odbc} instead of \term{mod\_vcard}.
+\item vCard-Based Avatars: Use \term{mod\_vcard\_xupdate\_odbc} instead of \term{mod\_vcard\_xupdate}.
 \item Private XML storage: Use \term{mod\_private\_odbc} instead of \term{mod\_private}.
 \item User rules for blocking communications: Use \term{mod\_privacy\_odbc} instead of \term{mod\_privacy}.
+\item Simple Communications Blocking: Use \term{mod\_blocking\_odbc} instead of \term{mod\_blocking}.
 \item Pub-Sub nodes, items and subscriptions: Use \term{mod\_pubsub\_odbc} instead of \term{mod\_pubsub}.
+\item Multi-user chats: Use \term{mod\_muc\_odbc} instead of \term{mod\_muc}.
+\item Manage announcements: Use \term{mod\_announce\_odbc} instead of \term{mod\_announce}.
+\item IRC transport: Use \term{mod\_irc\_odbc} instead of \term{mod\_irc}.
 \end{itemize}
 
 You can find more
@@ -2734,7 +2809,7 @@ Examples:
 \begin{itemize}
 \item Only administrators can send announcements:
 \begin{verbatim}
-{access, announce, [{allow, admins}]}.
+{access, announce, [{allow, admin}]}.
 
 {modules,
  [
@@ -2748,9 +2823,9 @@ Examples:
 \begin{verbatim}
 {acl, direction, {user, "big_boss", "example.org"}}.
 {acl, direction, {user, "assistant", "example.org"}}.
-{acl, admins, {user, "admin", "example.org"}}.
+{acl, admin, {user, "admin", "example.org"}}.
 
-{access, announce, [{allow, admins},
+{access, announce, [{allow, admin},
                     {allow, direction}]}.
 
 {modules,
@@ -3049,7 +3124,7 @@ End user information:
   to join a channel, and to set custom IRC username and encoding.
 \item When using a popular \XMPP{} server, it can occur that no
   connection can be achieved with some IRC servers because they limit the
-  number of conections from one IP.
+  number of connections from one IP.
 \end{itemize}
 
 Options:
@@ -3216,11 +3291,12 @@ Module options:
 \titem{\{default\_room\_options, [ \{OptionName, OptionValue\}, ...]\}} \ind{options!default\_room\_options}
   This module option allows to define the desired default room options.
   Note that the creator of a room can modify the options of his room
-  at any time using a XMPP client with MUC capability.
+  at any time using an XMPP client with MUC capability.
   The available room options and the default values are:
   \begin{description}
   \titem{\{allow\_change\_subj, true|false\}} Allow occupants to change the subject.
   \titem{\{allow\_private\_messages, true|false\}} Occupants can send private messages to other occupants.
+  \titem{\{allow\_private\_messages\_from\_visitors, anyone|moderators|nobody\}} Visitors can send private messages to other occupants.
   \titem{\{allow\_query\_users, true|false\}} Occupants can send IQ queries to other occupants.
   \titem{\{allow\_user\_invites, false|true\}} Allow occupants to send invitations.
   \titem{\{allow\_visitor\_nickchange, true|false\}} Allow visitors to
@@ -3465,10 +3541,10 @@ Examples:
   be stored in /var/www/muclogs, and the local time will be used. Finally, the
   top link will be the default \verb|<a href="/">Home</a>|.
 \begin{verbatim}
-{acl, admins, {user, "admin1", "example.org"}}.
-{acl, admins, {user, "admin2", "example.net"}}.
+{acl, admin, {user, "admin1", "example.org"}}.
+{acl, admin, {user, "admin2", "example.net"}}.
 
-{access, muc_log, [{allow, admins},
+{access, muc_log, [{allow, admin},
                    {deny, all}]}.
 
 {modules,
@@ -3948,6 +4024,8 @@ Options:
 
 This example configuration shows how to enable the module and the web handler:
 \begin{verbatim}
+{hosts, ["localhost", "example.org", "example.com"]}.
+
 {listen, [
   ...
   {5281, ejabberd_http, [
@@ -3966,7 +4044,8 @@ This example configuration shows how to enable the module and the web handler:
  ]}.
 \end{verbatim}
 
-The users can visit this page: https://localhost:5281/register/
+For example, the users of the host \term{example.org} can visit the page:
+\ns{https://example.org:5281/register/}
 It is important to include the last / character in the URL,
 otherwise the subpages URL will be incorrect.
 
@@ -3990,7 +4069,7 @@ Options:
   This option does not affect the client in any way.
   This option is only useful if Roster Versioning is enabled.
   This option is disabled by default.
-  Important: if you use \modsharedroster{} or \modsharedrosterldap{},
+  Important: if you use \modsharedroster{}, \modsharedrosterodbc{} or \modsharedrosterldap{},
   you must disable this option.
 \end{description}
 
@@ -4070,8 +4149,9 @@ has a unique identification and the following parameters:
   which is only recommended for a small server with just a few hundred users.
   The special member directive \term{@online@}
   represents the online users in the virtual host.
-\item[Displayed groups] A list of groups that will be in the rosters of this
-  group's members.
+\item[Displayed groups]
+  A list of groups that will be in the rosters of this group's members.
+  A group of other vhost can be identified with \term{groupid@vhost}
 \end{description}
 
 Examples:
@@ -4625,7 +4705,7 @@ Examples:
 \makesubsection{modvcardldap}{\modvcardldap{}}
 \ind{modules!\modvcardldap{}}\ind{JUD}\ind{Jabber User Directory}\ind{vCard}\ind{protocols!XEP-0054: vcard-temp}
 
-%TODO: verify if the referers to the LDAP section are still correct
+%TODO: verify if the referrers to the LDAP section are still correct
 
 \ejabberd{} can map LDAP attributes to vCard fields. This behaviour is
 implemented in the \modvcardldap{} module. This module does not depend on the
@@ -4642,8 +4722,9 @@ The \modvcardldap{} module has
 its own optional parameters. The first group of parameters has the same
 meaning as the top-level LDAP parameters to set the authentication method:
 \option{ldap\_servers}, \option{ldap\_port}, \option{ldap\_rootdn},
-\option{ldap\_password}, \option{ldap\_base}, \option{ldap\_uids}, and
-\option{ldap\_filter}. See section~\ref{ldapauth} for detailed information
+\option{ldap\_password}, \option{ldap\_base}, \option{ldap\_uids},
+\option{ldap\_deref\_aliases} and \option{ldap\_filter}.
+See section~\ref{ldapauth} for detailed information
 about these options. If one of these options is not set, \ejabberd{} will look
 for the top-level option with the same name.
 
@@ -4977,6 +5058,8 @@ The environment variables:
 	This path is used to read the file \term{.erlang.cookie}.
   \titem{ERL\_CRASH\_DUMP}
 	Path to the file where crash reports will be dumped.
+  \titem{ERL\_EPMD\_ADDRESS}
+	IP address where epmd listens for connections (see section \ref{epmd}).
   \titem{ERL\_INETRC}
 	Indicates which IP name resolution to use.
 	If using \term{-sname}, specify either this option or \term{-kernel inetrc filepath}.
@@ -5005,10 +5088,10 @@ The command line parameters:
         connections (see section \ref{epmd}).
   \titem{-detached}
         Starts the Erlang system detached from the system console.
-	Useful for running daemons and backgrounds processes.
+	Useful for running daemons and background processes.
   \titem{-noinput}
 	Ensures that the Erlang system never tries to read any input.
-	Useful for running daemons and backgrounds processes.
+	Useful for running daemons and background processes.
   \titem{-pa /var/lib/ejabberd/ebin}
 	Specify the directory where Erlang binary files (*.beam) are located.
   \titem{-s ejabberd}
@@ -5214,11 +5297,11 @@ Example configurations:
   administer the virtual host \jid{example.com}.
   The account `\jid{reviewer@example.com}' can browse that vhost in read-only mode.
 \begin{verbatim}
-{acl, admins, {user, "admin", "example.net"}}.
-{host_config, "example.com", [{acl, admins, {user, "admin", "example.com"}}]}.
+{acl, admin, {user, "admin", "example.net"}}.
+{host_config, "example.com", [{acl, admin, {user, "admin", "example.com"}}]}.
 {host_config, "example.com", [{acl, viewers, {user, "reviewer", "example.com"}}]}.
 
-{access, configure, [{allow, admins}]}.
+{access, configure, [{allow, admin}]}.
 {access, webadmin_view, [{allow, viewers}]}.
 
 {hosts, ["example.org"]}.
@@ -5268,7 +5351,7 @@ See section \ref{erlangconfiguration}.
 
 If you enable \modconfigure\ and \modadhoc,
 you can perform several administrative tasks in \ejabberd{}
-with a XMPP client.
+with an XMPP client.
 The client must support Ad-Hoc Commands (\xepref{0050}),
 and you must login in the XMPP server with
 an account with proper privileges.
@@ -5398,6 +5481,8 @@ In order for this communication to work,
 \term{epmd} must be running and listening for name requests in the port 4369.
 You should block the port 4369 in the firewall in such a way that
 only the programs in your machine can access it.
+or configure the option \term{ERL\_EPMD\_ADDRESS} in the file \term{ejabberdctl.cfg}
+(this option works only in Erlang/OTP R14B03 or higher).
 
 If you build a cluster of several \ejabberd{} instances,
 each \ejabberd{} instance is called an \ejabberd{} node.
@@ -5632,7 +5717,8 @@ domain.
 \makesection{servicelb}{Service Load-Balancing}
 \ind{component load-balancing}
 
-\makesubsection{componentlb}{Components Load-Balancing}
+% This section never had content, should it?
+% \makesubsection{componentlb}{Components Load-Balancing}
 
 \makesubsection{domainlb}{Domain Load-Balancing Algorithm}
 \ind{options!domain\_balancing}
@@ -5805,10 +5891,6 @@ The Web Admin also supports the \verb|Accept-Language| HTTP header.
 \end{figure}
 
 
-%\section{Ultra Complex Example}
-%\label{ultracomplexexample}
-%TODO: a very big example covering the whole guide, with a good explanation before the example: different authenticaton mechanisms, transports, ACLs, multple virtual hosts, virtual host specific settings and general settings, modules,...
-
 \makechapter{releasenotes}{Release Notes}
 \ind{release notes}
 
@@ -5822,6 +5904,7 @@ Thanks to all people who contributed to this guide:
 \item Badlop (\ahrefurl{xmpp:badlop@jabberes.org})
 \item Evgeniy Khramtsov (\ahrefurl{xmpp:xram@jabber.ru})
 \item Florian Zumbiehl (\ahrefurl{xmpp:florz@florz.de})
+\item Ludovic Bocquet (\ahrefurl{xmpp:lbocquet@jabber.org})
 \item Marcin Owsiany (\ahrefurl{xmpp:marcin.owsiany@gmail.com})
 \item Michael Grigutsch (\ahrefurl{xmpp:migri@jabber.i-pobox.net})
 \item Mickael Remond (\ahrefurl{xmpp:mremond@process-one.net})
@@ -5834,7 +5917,7 @@ Thanks to all people who contributed to this guide:
 \makechapter{copyright}{Copyright Information}
 
 Ejabberd Installation and Operation Guide.\\
-Copyright \copyright{} 2003 --- 2010 ProcessOne
+Copyright \copyright{} 2003 --- 2012 ProcessOne
 
 This document is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License

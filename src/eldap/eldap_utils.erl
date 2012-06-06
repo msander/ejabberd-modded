@@ -5,7 +5,7 @@
 %%% Created : 12 Oct 2006 by Mickael Remond <mremond@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -35,7 +35,10 @@
 	 make_filter/2,
 	 get_state/2,
 	 case_insensitive_match/2,
+         check_filter/1,
 	 uids_domain_subst/2]).
+
+-include("ejabberd.hrl").
 
 %% Generate an 'or' LDAP query on one or several attributes
 %% If there is only one attribute
@@ -91,10 +94,18 @@ get_user_part(String, Pattern) ->
 	{'EXIT', _} ->
 	    {error, badmatch};
 	Result ->
-	    case regexp:sub(Pattern, "%u", Result) of
-		{ok, String, _} -> {ok, Result};
-		_ -> {error, badmatch}
-	    end
+            case catch ejabberd_regexp:replace(Pattern, "%u", Result) of
+                {'EXIT', _} ->
+                    {error, badmatch};
+		StringRes ->
+                    case (string:to_lower(StringRes) ==
+                              string:to_lower(String)) of
+                        true ->
+                            {ok, Result};
+                        false ->
+                            {error, badmatch}
+                    end
+            end
     end.
 
 make_filter(Data, UIDs) ->
@@ -144,3 +155,16 @@ uids_domain_subst(Host, UIDs) ->
                   (A) -> A 
               end,
               UIDs).
+
+check_filter(undefined) ->
+    ok;
+check_filter(Filter) ->
+    case eldap_filter:parse(Filter) of
+        {ok, _} ->
+            ok;
+        Err ->
+            ?ERROR_MSG("failed to parse LDAP filter:~n"
+                       "** Filter: ~p~n"
+                       "** Reason: ~p",
+                       [Filter, Err])
+    end.

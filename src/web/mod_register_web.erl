@@ -5,7 +5,7 @@
 %%% Created :  4 May 2008 by Badlop <badlop@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -536,6 +536,11 @@ form_del_get(Host, Lang) ->
 %%                                    {error, not_allowed} |
 %%                                    {error, invalid_jid}
 register_account(Username, Host, Password) ->
+    case jlib:make_jid(Username, Host, "") of
+	error -> {error, invalid_jid};
+	_ -> register_account2(Username, Host, Password)
+    end.
+register_account2(Username, Host, Password) ->
     case ejabberd_auth:try_register(Username, Host, Password) of
 	{atomic, Res} ->
 	    {success, Res, {Username, Host, Password}};
@@ -598,6 +603,8 @@ unregister_account(Username, Host, Password) ->
 
 get_error_text({error, captcha_non_valid}) ->
     "The captcha you entered is wrong";
+get_error_text({success, exists, _}) ->
+    get_error_text({atomic, exists});
 get_error_text({atomic, exists}) ->
     "The account already exists";
 get_error_text({error, password_incorrect}) ->

@@ -5,7 +5,7 @@
 %%% Created : 19 Jan 2003 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -542,7 +542,7 @@ get_local_items({_, Host}, ["all users", [$@ | Diap]], _Server, _Lang) ->
 	Users ->
 	    SUsers = lists:sort([{S, U} || {U, S} <- Users]),
 	    case catch begin
-			   {ok, [S1, S2]} = regexp:split(Diap, "-"),
+			   [S1, S2] = ejabberd_regexp:split(Diap, "-"),
 			   N1 = list_to_integer(S1),
 			   N2 = list_to_integer(S2),
 			   Sub = lists:sublist(SUsers, N1, N2 - N1 + 1),
@@ -1403,9 +1403,7 @@ set_form(_From, Host, ["running nodes", ENode, "modules", "start"], _Lang, XData
 			    end;
 			_ ->
 			    {error, ?ERR_BAD_REQUEST}
-		    end;
-		_ ->
-		    {error, ?ERR_BAD_REQUEST}
+		    end
 	    end
     end;
 
@@ -1784,14 +1782,12 @@ stop_node(From, Host, ENode, Action, XData) ->
 
 
 get_last_info(User, Server) ->
-    ML = lists:member(mod_last, gen_mod:loaded_modules(Server)),
-    MLO = lists:member(mod_last_odbc, gen_mod:loaded_modules(Server)),
-    case {ML, MLO} of
-	{true, _} -> mod_last:get_last_info(User, Server);
-	{false, true} -> mod_last_odbc:get_last_info(User, Server);
-	{false, false} -> not_found
+    case gen_mod:is_loaded(Server, mod_last) of
+        true ->
+            mod_last:get_last_info(User, Server);
+        false ->
+            not_found
     end.
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

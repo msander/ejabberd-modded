@@ -5,7 +5,7 @@
 %%% Created : 14 Dec 2002 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -215,7 +215,7 @@ exit_or_halt(ExitText) ->
     case [Vsn || {ejabberd, _Desc, Vsn} <- application:which_applications()] of
 	[] ->
 	    timer:sleep(1000),
-	    halt(ExitText);
+	    halt(string:substr(ExitText, 1, 199));
 	[_] ->
 	    exit(ExitText)
     end.
@@ -374,6 +374,9 @@ process_term(Term, State) ->
 	    State;
 	{hosts, _Hosts} ->
 	    State;
+	{fqdn, HostFQDN} ->
+	    ?DEBUG("FQDN set to: ~p", [HostFQDN]),
+	    add_option(fqdn, HostFQDN, State);
 	{host_config, Host, Terms} ->
 	    lists:foldl(fun(T, S) -> process_host_term(T, Host, S) end,
 			State, Terms);
@@ -464,6 +467,8 @@ process_host_term(Term, Host, State) ->
 	    State;
 	{odbc_server, ODBC_server} ->
 	    add_option({odbc_server, Host}, ODBC_server, State);
+        {modules, Modules} ->
+            add_option({modules, Host}, replace_modules(Modules), State);
 	{Opt, Val} ->
 	    add_option({Opt, Host}, Val, State)
     end.
@@ -607,3 +612,30 @@ is_file_readable(Path) ->
 	{error, _Reason} ->
 	    false
     end.
+
+replace_module(mod_announce_odbc) -> {mod_announce, odbc};
+replace_module(mod_blocking_odbc) -> {mod_blocking, odbc};
+replace_module(mod_irc_odbc) -> {mod_irc, odbc};
+replace_module(mod_last_odbc) -> {mod_last, odbc};
+replace_module(mod_muc_odbc) -> {mod_muc, odbc};
+replace_module(mod_offline_odbc) -> {mod_offline, odbc};
+replace_module(mod_privacy_odbc) -> {mod_privacy, odbc};
+replace_module(mod_private_odbc) -> {mod_private, odbc};
+replace_module(mod_roster_odbc) -> {mod_roster, odbc};
+replace_module(mod_shared_roster_odbc) -> {mod_shared_roster, odbc};
+replace_module(mod_vcard_odbc) -> {mod_vcard, odbc};
+replace_module(mod_vcard_xupdate_odbc) -> {mod_vcard_xupdate, odbc};
+replace_module(Module) -> Module.
+
+replace_modules(Modules) ->
+    lists:map(
+      fun({Module, Opts}) ->
+              case replace_module(Module) of
+                  {NewModule, DBType} ->
+                      NewOpts = [{db_type, DBType} |
+                                 lists:keydelete(db_type, 1, Opts)],
+                      {NewModule, NewOpts};
+                  NewModule ->
+                      {NewModule, Opts}
+              end
+      end, Modules).

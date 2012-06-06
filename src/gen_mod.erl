@@ -5,7 +5,7 @@
 %%% Created : 24 Jan 2003 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -34,6 +34,8 @@
 	 get_opt/2,
 	 get_opt/3,
 	 get_opt_host/3,
+         db_type/1,
+         db_type/2,
 	 get_module_opt/4,
 	 get_module_opt_host/3,
 	 loaded_modules/1,
@@ -70,10 +72,23 @@ start_module(Host, Module, Opts) ->
     catch Class:Reason ->
 	    del_module_mnesia(Host, Module),
 	    ets:delete(ejabberd_modules, {Module, Host}),
-	    ?ERROR_MSG("Problem starting the module ~p for host ~p with options:~n  ~p~n  ~p: ~p",
+	    ErrorText = io_lib:format("Problem starting the module ~p for host ~p ~n options: ~p~n ~p: ~p",
 		    [Module, Host, Opts, Class, Reason]),
-	    erlang:raise(Class, Reason, erlang:get_stacktrace())
+	    ?CRITICAL_MSG(ErrorText, []),
+	    case is_app_running(ejabberd) of
+		true ->
+		    erlang:raise(Class, Reason, erlang:get_stacktrace());
+		false ->
+		    ?CRITICAL_MSG("ejabberd initialization was aborted because a module start failed.", []),
+		    timer:sleep(3000),
+		    erlang:halt(string:substr(lists:flatten(ErrorText), 1, 199))
+	    end
     end.
+
+is_app_running(AppName) ->
+    %% Use a high timeout to prevent a false positive in a high load system
+    Timeout = 15000,
+    lists:keymember(AppName, 1, application:which_applications(Timeout)).
 
 %% @doc Stop the module in a host, and forget its configuration.
 stop_module(Host, Module) ->
@@ -173,11 +188,23 @@ get_module_opt(Host, Module, Opt, Default) ->
 
 get_module_opt_host(Host, Module, Default) ->
     Val = get_module_opt(Host, Module, host, Default),
-    element(2, regexp:gsub(Val, "@HOST@", Host)).
+    ejabberd_regexp:greplace(Val, "@HOST@", Host).
 
 get_opt_host(Host, Opts, Default) ->
     Val = get_opt(host, Opts, Default),
-    element(2, regexp:gsub(Val, "@HOST@", Host)).
+    ejabberd_regexp:greplace(Val, "@HOST@", Host).
+
+db_type(Opts) ->
+    case get_opt(db_type, Opts, mnesia) of
+        odbc -> odbc;
+        _ -> mnesia
+    end.
+
+db_type(Host, Module) ->
+    case get_module_opt(Host, Module, db_type, mnesia) of
+        odbc -> odbc;
+        _ -> mnesia
+    end.
 
 loaded_modules(Host) ->
     ets:select(ejabberd_modules,

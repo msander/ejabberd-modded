@@ -5,7 +5,7 @@
 %%% Created : 12 Mar 2006 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -416,11 +416,11 @@ add_message_to_log(Nick1, Message, RoomJID, Opts, State) ->
 		   io_lib:format("<font class=\"msc\">~s~s~s</font><br/>", 
 				 [Nick, ?T(" has set the subject to: "), htmlize(T,NoFollow,FileFormat)]);
 	       {body, T} ->  
-		   case {regexp:first_match(T, "^/me\s"), Nick} of
+		   case {ejabberd_regexp:run(T, "^/me\s"), Nick} of
 		       {_, ""} ->
 			   io_lib:format("<font class=\"msm\">~s</font><br/>",
 					 [htmlize(T,NoFollow,FileFormat)]);
-		       {{match, _, _}, _} ->
+		       {match, _} ->
 			   io_lib:format("<font class=\"mne\">~s ~s</font><br/>", 
 					 [Nick, string:substr(htmlize(T,FileFormat), 5)]);
 		       {nomatch, _} ->
@@ -662,8 +662,7 @@ fw(F, S, O, FileFormat) ->
 	     html ->
 		 S1;
 	     plaintext ->
-		 {ok, Res, _} = regexp:gsub(S1, "<[^>]*>", ""),
-		 Res
+		 ejabberd_regexp:greplace(S1, "<[^>]*>", "")
 	 end,
     io:format(F, S2, []).
 
@@ -790,15 +789,15 @@ htmlize(S1, NoFollow, _FileFormat) ->
       S2_list).
 
 htmlize2(S1, NoFollow) ->
-    S2 = element(2, regexp:gsub(S1, "\\&", "\\&amp;")),
-    S3 = element(2, regexp:gsub(S2, "<", "\\&lt;")),
-    S4 = element(2, regexp:gsub(S3, ">", "\\&gt;")),
-    S5 = element(2, regexp:gsub(S4, "((http|https|ftp)://|(mailto|xmpp):)[^] )\'\"}]+",
-				link_regexp(NoFollow))),
+    S2 = ejabberd_regexp:greplace(S1, "\\&", "\\&amp;"),
+    S3 = ejabberd_regexp:greplace(S2, "<", "\\&lt;"),
+    S4 = ejabberd_regexp:greplace(S3, ">", "\\&gt;"),
+    S5 = ejabberd_regexp:greplace(S4, "((http|https|ftp)://|(mailto|xmpp):)[^] )\'\"}]+",
+				link_regexp(NoFollow)),
     %% Remove 'right-to-left override' unicode character 0x202e
-    S6 = element(2, regexp:gsub(S5, "  ", "\\&nbsp;\\&nbsp;")),
-    S7 = element(2, regexp:gsub(S6, "\\t", "\\&nbsp;\\&nbsp;\\&nbsp;\\&nbsp;")),
-    element(2, regexp:gsub(S7, [226,128,174], "[RLO]")).
+    S6 = ejabberd_regexp:greplace(S5, "  ", "\\&nbsp;\\&nbsp;"),
+    S7 = ejabberd_regexp:greplace(S6, "\\t", "\\&nbsp;\\&nbsp;\\&nbsp;\\&nbsp;"),
+    ejabberd_regexp:greplace(S7, [226,128,174], "[RLO]").
 
 %% Regexp link
 %% Add the nofollow rel attribute when required
@@ -863,6 +862,7 @@ roomconfig_to_string(Options, Lang, FileFormat) ->
 				       max_users -> "<div class=\"rcot\">" ++ OptText ++ ": \"" ++ htmlize(integer_to_list(T), FileFormat) ++ "\"</div>";
 				       title -> "<div class=\"rcot\">" ++ OptText ++ ": \"" ++ htmlize(T, FileFormat) ++ "\"</div>";
 				       description -> "<div class=\"rcot\">" ++ OptText ++ ": \"" ++ htmlize(T, FileFormat) ++ "\"</div>";
+				       allow_private_messages_from_visitors -> "<div class=\"rcot\">" ++ OptText ++ ": \"" ++ htmlize(?T(atom_to_list(T)), FileFormat) ++ "\"</div>";
 				       _ -> "\"" ++ T ++ "\""
 				   end
 			   end,
@@ -884,6 +884,7 @@ get_roomconfig_text(moderated) -> "Make room moderated";
 get_roomconfig_text(members_by_default) -> "Default users as participants";
 get_roomconfig_text(allow_change_subj) -> "Allow users to change the subject";
 get_roomconfig_text(allow_private_messages) -> "Allow users to send private messages";
+get_roomconfig_text(allow_private_messages_from_visitors) -> "Allow visitors to send private messages to";
 get_roomconfig_text(allow_query_users) -> "Allow users to query other users";
 get_roomconfig_text(allow_user_invites) -> "Allow users to send invites";
 get_roomconfig_text(logging) ->  "Enable logging";
@@ -943,7 +944,7 @@ get_room_state(RoomName, MucService) ->
 	    RoomPid = R#muc_online_room.pid,
 	    get_room_state(RoomPid);
 	[] ->
-	    room_not_found
+	    #state{}
     end.
 
 get_room_state(RoomPid) ->

@@ -5,7 +5,7 @@
 %%% Created : 15 Jan 2003 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -31,7 +31,7 @@
 -behaviour(gen_mod).
 
 %% API
--export([start_link/2, start/2, stop/1]).
+-export([start_link/2, start/2, stop/1, do_client_version/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,

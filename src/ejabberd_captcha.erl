@@ -5,7 +5,7 @@
 %%% Created : 26 Apr 2008 by Evgeniy Khramtsov <xramtsov@gmail.com>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -304,7 +304,7 @@ process(_Handlers, #request{method='POST', q=Q, lang=Lang, path=[_, Id]}) ->
 	    Form =
 		{xmlelement, "p", [],
 		 [{xmlcdata,
-		   translate:translate(Lang, "The captcha is valid.")
+		   translate:translate(Lang, "The CAPTCHA is valid.")
 		  }]},
 	    ejabberd_web:make_xhtml([Form]);
 	captcha_non_valid ->
@@ -559,15 +559,16 @@ is_feature_available() ->
     end.
 
 check_captcha_setup() ->
-    AbleToGenerateCaptcha = case create_image() of
-                                {ok, _, _, _} -> true;
-                                _Error -> false
-                            end,
-    case is_feature_available() andalso not AbleToGenerateCaptcha of
+    case is_feature_available() of
 	true ->
-	    ?CRITICAL_MSG("Captcha is enabled in the option captcha_cmd, "
-			  "but it can't generate images.", []),
-	    throw({error, captcha_cmd_enabled_but_fails});
+            case create_image() of
+                {ok, _, _, _} ->
+                    ok;
+                _Err ->
+                    ?CRITICAL_MSG("Captcha is enabled in the option captcha_cmd, "
+                                  "but it can't generate images.", []),
+                    throw({error, captcha_cmd_enabled_but_fails})
+            end;
 	false ->
 	    ok
     end.

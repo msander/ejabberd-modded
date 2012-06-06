@@ -218,6 +218,13 @@
 %% comment this line and enable the correct ones.
 %%
 {auth_method, internal}.
+%%
+%% Store the plain passwords or hashed for SCRAM:
+%%{auth_password_format, plain}.
+%%{auth_password_format, scram}.
+%%
+%% Define the FQDN if ejabberd doesn't detect it:
+%%{fqdn, "server3.example.com"}.
 
 %%
 %% Authentication using external script
@@ -494,6 +501,7 @@
  [
   {mod_adhoc,    []},
   {mod_announce, [{access, announce}]}, % recommends mod_adhoc
+  {mod_blocking,[]}, % requires mod_privacy
   {mod_caps,     []},
   {mod_configure,[]}, % requires mod_adhoc
   {mod_disco,    []},

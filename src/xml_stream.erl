@@ -5,7 +5,7 @@
 %%% Created : 17 Nov 2002 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -99,7 +99,7 @@ new(CallbackPid) ->
     new(CallbackPid, infinity).
 
 new(CallbackPid, MaxSize) ->
-    Port = open_port({spawn, expat_erl}, [binary]),
+    Port = open_port({spawn, "expat_erl"}, [binary]),
     #xml_stream_state{callback_pid = CallbackPid,
 		      port = Port,
 		      stack = [],
@@ -140,7 +140,7 @@ close(#xml_stream_state{port = Port}) ->
 
 
 parse_element(Str) ->
-    Port = open_port({spawn, expat_erl}, [binary]),
+    Port = open_port({spawn, "expat_erl"}, [binary]),
     Res = port_control(Port, ?PARSE_FINAL_COMMAND, Str),
     port_close(Port),
     process_element_events(binary_to_term(Res)).

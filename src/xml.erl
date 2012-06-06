@@ -5,7 +5,7 @@
 %%% Created : 20 Nov 2002 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -111,6 +111,7 @@ crypt(S) when is_list(S) ->
 	 $> -> "&gt;";
 	 $" -> "&quot;";
 	 $' -> "&apos;";
+         _ when is_list(C); is_binary(C) -> crypt(C);
 	 _ -> C
      end || C <- S];
 crypt(S) when is_binary(S) ->

@@ -5,7 +5,7 @@
 %%% Created : 11 Jan 2003 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -162,12 +162,12 @@ get_local_stat(_Server, [], Name) when Name == "users/all-hosts/online" ->
     end;
 
 get_local_stat(_Server, [], Name) when Name == "users/all-hosts/total" ->
-    case catch mnesia:table_info(passwd, size) of
-	{'EXIT', _Reason} ->
-	    ?STATERR("500", "Internal Server Error");
-	Users ->
-	    ?STATVAL(integer_to_list(Users), "users")
-    end;
+    NumUsers = lists:foldl(
+		 fun(Host, Total) ->
+			 ejabberd_auth:get_vh_registered_users_number(Host)
+			     + Total
+		 end, 0, ejabberd_config:get_global_option(hosts)),
+    ?STATVAL(integer_to_list(NumUsers), "users");
 
 get_local_stat(_Server, _, Name) ->
     ?STATERR("404", "Not Found").

@@ -5,7 +5,7 @@
 %%% Created :  9 Apr 2004 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -113,17 +113,17 @@ get_menu_items(Host, cluster, Lang, JID) ->
 		{Base++URI++"/", Name}
 	end,
 	Items
-    );
-get_menu_items(Host, Node, Lang, JID) ->
-    {Base, _, Items} = make_host_node_menu(Host, Node, Lang, JID),
-    lists:map(
-	fun({URI, Name}) ->
-		{Base++URI++"/", Name};
-	   ({URI, Name, _SubMenu}) ->
-		{Base++URI++"/", Name}
-	end,
-	Items
     ).
+%% get_menu_items(Host, Node, Lang, JID) ->
+%%     {Base, _, Items} = make_host_node_menu(Host, Node, Lang, JID),
+%%     lists:map(
+%% 	fun({URI, Name}) ->
+%% 		{Base++URI++"/", Name};
+%% 	   ({URI, Name, _SubMenu}) ->
+%% 		{Base++URI++"/", Name}
+%% 	end,
+%% 	Items
+%%     ).
 
 is_allowed_path(BasePath, {Path, _}, JID) ->
     is_allowed_path(BasePath ++ [Path], JID);
@@ -318,7 +318,7 @@ make_xhtml(Els, Host, Node, Lang, JID) ->
 		 [?XAE("div",
 		       [{"id", "copyright"}],
 		       [?XC("p",
-			     "ejabberd (c) 2002-2011 ProcessOne")
+			     "ejabberd (c) 2002-2012 ProcessOne")
 		       ])])])
       ]}}.
 
@@ -1239,13 +1239,12 @@ acl_spec_select(ID, Opt) ->
 term_to_string(T) ->
     StringParagraph = lists:flatten(io_lib:format("~1000000p", [T])),
     %% Remove from the string all the carriage returns characters
-    {ok, StringLine, _} = regexp:gsub(StringParagraph, "\\n ", ""),
-    StringLine.
+    ejabberd_regexp:greplace(StringParagraph, "\\n ", "").
 
 %% @spec (T::any(), Cols::integer()) -> {NumLines::integer(), Paragraph::string()}
 term_to_paragraph(T, Cols) ->
     Paragraph = erl_prettypr:format(erl_syntax:abstract(T), [{paper, Cols}]),
-    {ok, FieldList} = regexp:split(Paragraph, "\n"),
+    FieldList = ejabberd_regexp:split(Paragraph, "\n"),
     NumLines = length(FieldList),
     {NumLines, Paragraph}.
 
@@ -1558,14 +1557,13 @@ list_users_parse_query(Query, Host) ->
 list_users_in_diapason(Host, Diap, Lang, URLFunc) ->
     Users = ejabberd_auth:get_vh_registered_users(Host),
     SUsers = lists:sort([{S, U} || {U, S} <- Users]),
-    {ok, [S1, S2]} = regexp:split(Diap, "-"),
+    [S1, S2] = ejabberd_regexp:split(Diap, "-"),
     N1 = list_to_integer(S1),
     N2 = list_to_integer(S2),
     Sub = lists:sublist(SUsers, N1, N2 - N1 + 1),
     [list_given_users(Host, Sub, "../../", Lang, URLFunc)].
 
 list_given_users(Host, Users, Prefix, Lang, URLFunc) ->
-    ModLast = get_lastactivity_module(Host),
     ModOffline = get_offlinemsg_module(Host),
     ?XE("table",
 	[?XE("thead",
@@ -1584,7 +1582,7 @@ list_given_users(Host, Users, Prefix, Lang, URLFunc) ->
 		       FLast =
 			   case ejabberd_sm:get_user_resources(User, Server) of
 			       [] ->
-				   case ModLast:get_last_info(User, Server) of
+				   case mod_last:get_last_info(User, Server) of
 				       not_found ->
 					   ?T("Never");
 				       {ok, Shift, _Status} ->
@@ -1619,22 +1617,17 @@ get_offlinemsg_length(ModOffline, User, Server) ->
     end.
 
 get_offlinemsg_module(Server) ->
-    case [mod_offline, mod_offline_odbc] -- gen_mod:loaded_modules(Server) of
-        [mod_offline, mod_offline_odbc] -> none;
-        [mod_offline_odbc] -> mod_offline;
-        [mod_offline] -> mod_offline_odbc
-    end.
-
-get_lastactivity_module(Server) ->
-    case lists:member(mod_last, gen_mod:loaded_modules(Server)) of
-        true -> mod_last;
-        _ -> mod_last_odbc
+    case gen_mod:is_loaded(Server, mod_offline) of
+        true ->
+            mod_offline;
+        false ->
+            none
     end.
 
 get_lastactivity_menuitem_list(Server) ->
-    case get_lastactivity_module(Server) of
-        mod_last -> [{"last-activity", "Last Activity"}];
-        mod_last_odbc -> []
+    case gen_mod:db_type(Server, mod_last) of
+        mnesia -> [{"last-activity", "Last Activity"}];
+        _ -> []
     end.
 
 us_to_list({User, Server}) ->
@@ -1648,7 +1641,10 @@ su_to_list({Server, User}) ->
 
 get_stats(global, Lang) ->
     OnlineUsers = mnesia:table_info(session, size),
-    RegisteredUsers = mnesia:table_info(passwd, size),
+    RegisteredUsers = lists:foldl(
+	fun(Host, Total) ->
+	    ejabberd_auth:get_vh_registered_users_number(Host) + Total
+	end, 0, ejabberd_config:get_global_option(hosts)),
     S2SConns = ejabberd_s2s:dirty_get_connections(),
     S2SConnections = length(S2SConns),
     S2SServers = length(lists:usort([element(2, C) || C <- S2SConns])),
@@ -1733,10 +1729,9 @@ user_info(User, Server, Query, Lang) ->
     UserItems = ejabberd_hooks:run_fold(webadmin_user, LServer, [],
 					[User, Server, Lang]),
     %% Code copied from list_given_users/5:
-    ModLast = get_lastactivity_module(Server),
     LastActivity = case ejabberd_sm:get_user_resources(User, Server) of
 		       [] ->
-			   case ModLast:get_last_info(User, Server) of
+			   case mod_last:get_last_info(User, Server) of
 			       not_found ->
 				   ?T("Never");
 			       {ok, Shift, _Status} ->
@@ -2020,7 +2015,6 @@ get_node(global, Node, ["db"], Query, Lang) ->
 get_node(global, Node, ["backup"], Query, Lang) ->
     HomeDirRaw = case {os:getenv("HOME"), os:type()} of
 	{EnvHome, _} when is_list(EnvHome) -> EnvHome;
-	{false, win32} -> "C:/";
 	{false, {win32, _Osname}} -> "C:/";
 	{false, _} -> "/tmp/"
     end,
@@ -2030,7 +2024,7 @@ get_node(global, Node, ["backup"], Query, Lang) ->
 	       ok -> [?XREST("Submitted")];
 	       {error, Error} -> [?XRES(?T("Error") ++": " ++ io_lib:format("~p", [Error]))]
 	   end,
-    [?XC("h1", ?T("Backup of ") ++ atom_to_list(Node))] ++
+    ?H1GL(?T("Backup of ") ++ atom_to_list(Node), "list-eja-commands", "List of ejabberd Commands") ++
 	ResS ++
 	[?XCT("p", "Please note that these options will only backup the builtin Mnesia database. If you are using the ODBC module, you also need to backup your SQL database separately."),
      ?XAE("form", [{"action", ""}, {"method", "post"}],

@@ -1,5 +1,5 @@
 /*
- * ejabberd, Copyright (C) 2002-2011   ProcessOne
+ * ejabberd, Copyright (C) 2002-2012   ProcessOne
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -42,6 +42,16 @@ typedef unsigned __int32 uint32_t;
 
 #ifndef SSL_OP_NO_TICKET
 #define SSL_OP_NO_TICKET 0
+#endif
+
+/*
+ * R15B changed several driver callbacks to use ErlDrvSizeT and
+ * ErlDrvSSizeT typedefs instead of int.
+ * This provides missing typedefs on older OTP versions.
+ */
+#if ERL_DRV_EXTENDED_MAJOR_VERSION < 2
+typedef int ErlDrvSizeT;
+typedef int ErlDrvSSizeT;
 #endif
 
 /*
@@ -305,10 +315,10 @@ static int verify_callback(int preverify_ok, X509_STORE_CTX *ctx)
 	 }
 
 
-static int tls_drv_control(ErlDrvData handle,
+static ErlDrvSSizeT tls_drv_control(ErlDrvData handle,
 			   unsigned int command,
-			   char *buf, int len,
-			   char **rbuf, int rlen)
+			   char *buf, ErlDrvSizeT len,
+			   char **rbuf, ErlDrvSizeT rlen)
 {
    tls_data *d = (tls_data *)handle;
    int res;
@@ -407,22 +417,12 @@ static int tls_drv_control(ErlDrvData handle,
 	 break;
       case GET_ENCRYPTED_OUTPUT:
 	 die_unless(d->ssl, "SSL not initialized");
-	 size = BUF_SIZE + 1;
-	 rlen = 1;
+	 size = BIO_ctrl_pending(d->bio_write) + 1;
 	 b = driver_alloc_binary(size);
 	 b->orig_bytes[0] = 0;
-	 while ((res = BIO_read(d->bio_write,
-				b->orig_bytes + rlen, BUF_SIZE)) > 0)
-	 {
-	    //printf("%d bytes of encrypted data read from state machine\r\n", res);
-
-	    rlen += res;
-	    size += BUF_SIZE;
-	    b = driver_realloc_binary(b, size);
-	 }
-	 b = driver_realloc_binary(b, rlen);
+	 BIO_read(d->bio_write, b->orig_bytes + 1, size - 1);
 	 *rbuf = (char *)b;
-	 return rlen;
+	 return size;
       case GET_DECRYPTED_INPUT:
 	 if (!SSL_is_init_finished(d->ssl))
 	 {
@@ -430,19 +430,33 @@ static int tls_drv_control(ErlDrvData handle,
 	    if (res <= 0)
 	       die_unless(SSL_get_error(d->ssl, res) == SSL_ERROR_WANT_READ,
 			  "SSL_do_handshake failed");
-	 } else {
+	 }
+	 if (SSL_is_init_finished(d->ssl)) {
+	    size_t req_size = 0;
+	    if (len == 4)
+	    {
+	       req_size =
+		  (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
+	    }
 	    size = BUF_SIZE + 1;
 	    rlen = 1;
 	    b = driver_alloc_binary(size);
 	    b->orig_bytes[0] = 0;
 
-	    while ((res = SSL_read(d->ssl,
-				   b->orig_bytes + rlen, BUF_SIZE)) > 0)
+	    res = 0;
+
+	    while ((req_size == 0 || rlen < req_size + 1) &&
+		   (res = SSL_read(d->ssl,
+				   b->orig_bytes + rlen,
+				   (req_size == 0 || req_size + 1 >= size) ?
+				   size - rlen : req_size + 1 - rlen)) > 0)
 	    {
 	       //printf("%d bytes of decrypted data read from state machine\r\n",res);
 	       rlen += res;
-	       size += BUF_SIZE;
-	       b = driver_realloc_binary(b, size);
+	       if (size - rlen < BUF_SIZE) {
+		  size *= 2;
+		  b = driver_realloc_binary(b, size);
+	       }
 	    }
 
 	    if (res < 0)
@@ -513,7 +527,19 @@ ErlDrvEntry tls_driver_entry = {
    NULL,			/* handle */
    tls_drv_control,		/* F_PTR control, port_command callback */
    NULL,			/* F_PTR timeout, reserved */
-   NULL				/* F_PTR outputv, reserved */
+   NULL,			/* F_PTR outputv, reserved */
+  /* Added in Erlang/OTP R15B: */
+  NULL,                 /* ready_async */
+  NULL,                 /* flush */
+  NULL,                 /* call */
+  NULL,                 /* event */
+  ERL_DRV_EXTENDED_MARKER,        /* extended_marker */
+  ERL_DRV_EXTENDED_MAJOR_VERSION, /* major_version */
+  ERL_DRV_EXTENDED_MINOR_VERSION, /* minor_version */
+  0,                    /* driver_flags */
+  NULL,                 /* handle2 */
+  NULL,                 /* process_exit */
+  NULL                  /* stop_select */
 };
 
 DRIVER_INIT(tls_drv) /* must match name in driver_entry */

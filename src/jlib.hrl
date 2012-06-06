@@ -1,6 +1,6 @@
 %%%----------------------------------------------------------------------
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -30,6 +30,7 @@
 -define(NS_ROSTER,       "jabber:iq:roster").
 -define(NS_ROSTER_VER,   "urn:xmpp:features:rosterver").
 -define(NS_PRIVACY,      "jabber:iq:privacy").
+-define(NS_BLOCKING,     "urn:xmpp:blocking").
 -define(NS_PRIVATE,      "jabber:iq:private").
 -define(NS_VERSION,      "jabber:iq:version").
 -define(NS_TIME90,       "jabber:iq:time"). % TODO: Remove once XEP-0090 is Obsolete
@@ -99,6 +100,8 @@
 	 [{"code", Code}, {"type", Type}],
 	 [{xmlelement, Condition, [{"xmlns", ?NS_STANZAS}], []}]}).
 
+-define(ERR_BAD_FORMAT,
+	?STANZA_ERROR("406", "modify", "bad-format")).
 -define(ERR_BAD_REQUEST,
 	?STANZA_ERROR("400", "modify", "bad-request")).
 -define(ERR_CONFLICT,
@@ -153,6 +156,8 @@
 	  {xmlelement, "text", [{"xmlns", ?NS_STANZAS}],
 	   [{xmlcdata, translate:translate(Lang, Text)}]}]}).
 
+-define(ERRT_BAD_FORMAT(Lang, Text),
+	?STANZA_ERRORT("406", "modify", "bad-format", Lang, Text)).
 -define(ERRT_BAD_REQUEST(Lang, Text),
 	?STANZA_ERRORT("400", "modify", "bad-request", Lang, Text)).
 -define(ERRT_CONFLICT(Lang, Text),

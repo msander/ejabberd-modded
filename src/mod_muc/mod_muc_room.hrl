@@ -1,6 +1,6 @@
 %%%----------------------------------------------------------------------
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -31,6 +31,7 @@
 		 allow_change_subj = true,
 		 allow_query_users = true,
 		 allow_private_messages = true,
+		 allow_private_messages_from_visitors = anyone,
 		 allow_visitor_status = true,
 		 allow_visitor_nickchange = true,
 		 public = true,
@@ -44,6 +45,8 @@
 		 password_protected = false,
 		 password = "",
 		 anonymous = true,
+		 allow_voice_requests = true,
+		 voice_request_min_interval = 1800,
 		 max_users = ?MAX_USERS_DEFAULT,
 		 logging = false,
                  captcha_whitelist = ?SETS:empty()
@@ -64,11 +67,14 @@
 -record(state, {room,
 		host,
 		server_host,
+                mod,
 		access,
 		jid,
 		config = #config{},
 		users = ?DICT:new(),
+		last_voice_request_time = treap:empty(),
 		robots = ?DICT:new(),
+		nicks = ?DICT:new(),
 		affiliations = ?DICT:new(),
 		history,
 		subject = "",
@@ -79,5 +85,6 @@
 		room_queue = queue:new()}).
 
 -record(muc_online_users, {us,
+			   resource,
 			   room,
 			   host}).

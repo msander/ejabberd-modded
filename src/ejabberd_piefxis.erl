@@ -5,7 +5,7 @@
 %%% Created : 17 Jul 2008 by Pablo Polvorin <pablo.polvorin@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -159,13 +159,13 @@ process_element(El=#xmlel{name=user, ns=_XMLNS},
     State;
 
 process_element(H=#xmlel{name=host},State) ->
-    State#parsing_state{host=?BTL(exmpp_xml:get_attribute(H,"jid",none))};
+    State#parsing_state{host=?BTL(exmpp_xml:get_attribute(H, <<"jid">>, none))};
 
 process_element(#xmlel{name='server-data'},State) ->
     State;
 
 process_element(El=#xmlel{name=include, ns=?NS_XINCLUDE}, State=#parsing_state{dir=Dir}) ->
-    case exmpp_xml:get_attribute(El, href, none) of
+    case exmpp_xml:get_attribute(El, <<"href">>, none) of
 	none ->
 	    ok;
 	HrefB ->
@@ -194,25 +194,26 @@ process_element(El,State) ->
 %%%% Add user
 
 add_user(El, Domain) ->
-    User = exmpp_xml:get_attribute(El,name,none),
-    Password = exmpp_xml:get_attribute(El,password,none),
-    add_user(El, Domain, User, Password).
+    User = exmpp_xml:get_attribute(El, <<"name">>, none),
+    PasswordFormat = exmpp_xml:get_attribute(El, <<"password-format">>, <<"plaintext">>),
+    Password = exmpp_xml:get_attribute(El, <<"password">>, none),
+    add_user(El, Domain, User, PasswordFormat, Password).
 
 %% @spec (El::xmlel(), Domain::string(), User::binary(), Password::binary() | none)
 %%       -> ok | {error, ErrorText::string()}
 %% @doc Add a new user to the database.
 %% If user already exists, it will be only updated.
-add_user(El, Domain, UserBinary, none) ->
+add_user(El, Domain, UserBinary, <<"plaintext">>, none) ->
     User = ?BTL(UserBinary),
     io:format("Account ~s@~s will not be created, updating it...~n",
 	      [User, Domain]),
     io:format(""),
     populate_user_with_elements(El, Domain, User),
     ok;
-add_user(El, Domain, UserBinary, PasswordBinary) ->
+add_user(El, Domain, UserBinary, PasswordFormat, PasswordBinary) ->
     User = ?BTL(UserBinary),
-    Password = ?BTL(PasswordBinary),
-    case create_user(User,Password,Domain) of
+    Password2 = prepare_password(PasswordFormat, PasswordBinary, El),
+    case create_user(User,Password2,Domain) of
 	ok ->
 	    populate_user_with_elements(El, Domain, User),
 	    ok;
@@ -226,6 +227,21 @@ add_user(El, Domain, UserBinary, PasswordBinary) ->
 	    ?ERROR_MSG("Error adding user ~s@~s: ~p~n", [User, Domain, Other]),
 	    {error, Other}
     end.
+
+prepare_password(<<"plaintext">>, PasswordBinary, _El) ->
+    ?BTL(PasswordBinary);
+prepare_password(<<"scram">>, none, El) ->
+    ScramEl = exmpp_xml:get_element(El, 'scram-hash'),
+    #scram{storedkey = base64:decode(exmpp_xml:get_attribute(
+					ScramEl, <<"stored-key">>, none)),
+	   serverkey = base64:decode(exmpp_xml:get_attribute(
+					ScramEl, <<"server-key">>, none)),
+	   salt = base64:decode(exmpp_xml:get_attribute(
+				  ScramEl, <<"salt">>, none)),
+	   iterationcount = list_to_integer(exmpp_xml:get_attribute_as_list(
+					       ScramEl, <<"iteration-count">>,
+					       ?SCRAM_DEFAULT_ITERATION_COUNT))
+	  }.
 
 populate_user_with_elements(El, Domain, User) ->
     exmpp_xml:foreach(
@@ -273,9 +289,10 @@ create_user(User,Password,Domain) ->
 
 populate_user(User,Domain,El=#xmlel{name='query', ns='jabber:iq:roster'}) ->
     io:format("Trying to add/update roster list...",[]),
-    case loaded_module(Domain,[mod_roster_odbc,mod_roster]) of
-	{ok, M} ->
-	    case M:set_items(User, Domain, exmpp_xml:xmlel_to_xmlelement(El)) of
+    case loaded_module(Domain, mod_roster) of
+	{ok, _DBType} ->
+	    case mod_roster:set_items(User, Domain,
+                                      exmpp_xml:xmlel_to_xmlelement(El)) of
 		{atomic, ok} ->
 		    io:format(" DONE.~n",[]),
 		    ok;
@@ -286,7 +303,7 @@ populate_user(User,Domain,El=#xmlel{name='query', ns='jabber:iq:roster'}) ->
 		    {error, not_found}
 	    end;
 	E -> io:format(" ERROR: ~p~n",[E]),
-	     ?ERROR_MSG("No modules loaded [mod_roster, mod_roster_odbc] ~s ~n",
+	     ?ERROR_MSG("No modules loaded [mod_roster] ~s ~n",
 			[exmpp_xml:document_to_list(El)]),
 	     {error, not_found}
     end;
@@ -314,10 +331,10 @@ populate_user(User,Domain,El=#xmlel{name='query', ns='jabber:iq:roster'}) ->
 
 populate_user(User,Domain,El=#xmlel{name='vCard', ns='vcard-temp'}) ->
     io:format("Trying to add/update vCards...",[]),
-    case loaded_module(Domain,[mod_vcard,mod_vcard_odbc]) of
-	{ok, M}  ->  FullUser = jid_to_old_jid(exmpp_jid:make(User, Domain)),
+    case loaded_module(Domain, mod_vcard) of
+	{ok, _}  ->  FullUser = jid_to_old_jid(exmpp_jid:make(User, Domain)),
 		     IQ = iq_to_old_iq(#iq{type = set, payload = El}),
-		     case M:process_sm_iq(FullUser, FullUser , IQ) of
+		     case mod_vcard:process_sm_iq(FullUser, FullUser , IQ) of
 			 {error,_Err} ->
 			     io:format(" ERROR.~n",[]),
 			     ?ERROR_MSG("Error processing vcard ~s : ~p ~n",
@@ -327,7 +344,7 @@ populate_user(User,Domain,El=#xmlel{name='vCard', ns='vcard-temp'}) ->
 		     end;
 	_ ->
 	    io:format(" ERROR.~n",[]),
-	    ?ERROR_MSG("No modules loaded [mod_vcard, mod_vcard_odbc] ~s ~n",
+	    ?ERROR_MSG("No modules loaded [mod_vcard] ~s ~n",
 		       [exmpp_xml:document_to_list(El)]),
 	    {error, not_found}
     end;
@@ -340,22 +357,22 @@ populate_user(User,Domain,El=#xmlel{name='vCard', ns='vcard-temp'}) ->
 
 populate_user(User,Domain,El=#xmlel{name='offline-messages'}) ->
     io:format("Trying to add/update offline-messages...",[]),
-    case loaded_module(Domain, [mod_offline, mod_offline_odbc]) of
-	{ok, M} ->
+    case loaded_module(Domain, mod_offline) of
+	{ok, _DBType} ->
 	    ok = exmpp_xml:foreach(
 		   fun (_Element, {xmlcdata, _}) ->
 			   ok;
 		       (_Element, Child) ->
-			   From  = exmpp_xml:get_attribute(Child,from,none),
+			   From  = exmpp_xml:get_attribute(Child, <<"from">>,none),
 			   FullFrom = jid_to_old_jid(exmpp_jid:parse(From)),
 			   FullUser = jid_to_old_jid(exmpp_jid:make(User,
 								    Domain)),
 			   OldChild = exmpp_xml:xmlel_to_xmlelement(Child),
-			   _R = M:store_packet(FullFrom, FullUser, OldChild)
+			   _R = mod_offline:store_packet(FullFrom, FullUser, OldChild)
 		   end, El), io:format(" DONE.~n",[]);
 	_ ->
 	    io:format(" ERROR.~n",[]),
-	    ?ERROR_MSG("No modules loaded [mod_offline, mod_offline_odbc] ~s ~n",
+	    ?ERROR_MSG("No modules loaded [mod_offline] ~s ~n",
 		       [exmpp_xml:document_to_list(El)]),
 	    {error, not_found}
     end;
@@ -368,15 +385,15 @@ populate_user(User,Domain,El=#xmlel{name='offline-messages'}) ->
 
 populate_user(User,Domain,El=#xmlel{name='query', ns='jabber:iq:private'}) ->
     io:format("Trying to add/update private storage...",[]),
-    case loaded_module(Domain,[mod_private_odbc,mod_private]) of
-	{ok, M} ->
+    case loaded_module(Domain, mod_private) of
+	{ok, _DBType} ->
 	    FullUser = jid_to_old_jid(exmpp_jid:make(User, Domain)),
 	    IQ = iq_to_old_iq(#iq{type = set,
 				  ns = 'jabber:iq:private',
 				  kind = request,
 				  iq_ns = 'jabberd:client',
 				  payload = El}),
-	    case M:process_sm_iq(FullUser, FullUser, IQ ) of
+	    case mod_private:process_sm_iq(FullUser, FullUser, IQ ) of
 		{error, _Err} ->
 		    io:format(" ERROR.~n",[]),
 		    ?ERROR_MSG("Error processing private storage ~s : ~p ~n",
@@ -385,7 +402,7 @@ populate_user(User,Domain,El=#xmlel{name='query', ns='jabber:iq:private'}) ->
 	    end;
 	_ ->
 	    io:format(" ERROR.~n",[]),
-	    ?ERROR_MSG("No modules loaded [mod_private, mod_private_odbc] ~s ~n",
+	    ?ERROR_MSG("No modules loaded [mod_private] ~s ~n",
 		       [exmpp_xml:document_to_list(El)]),
 	    {error, not_found}
     end;
@@ -399,13 +416,12 @@ populate_user(_User, _Domain, _El) ->
 %%%==================================
 %%%% Utilities
 
-loaded_module(Domain,Options) ->
-    LoadedModules = gen_mod:loaded_modules(Domain),
-    case lists:filter(fun(Module) ->
-			      lists:member(Module, LoadedModules)
-                      end, Options) of
-        [M|_] -> {ok, M};
-        [] -> {error,not_found}
+loaded_module(Domain, Module) ->
+    case gen_mod:is_loaded(Domain, Module) of
+        true ->
+            {ok, gen_mod:db_type(Domain, Module)};
+        false ->
+            {error, not_found}
     end.
 
 jid_to_old_jid(Jid) ->
@@ -538,20 +554,33 @@ export_user(Fd, Username, Host) ->
 
 %% @spec (Username::string(), Host::string()) -> string()
 extract_user(Username, Host) ->
-    Password = ejabberd_auth:get_password_s(Username, Host),
+    Password = ejabberd_auth:get_password(Username, Host),
+    PasswordStr = build_password_string(Password),
     UserInfo = [extract_user_info(InfoName, Username, Host) || InfoName <- [roster, offline, private, vcard]],
     UserInfoString = lists:flatten(UserInfo),
-    io_lib:format("<user name='~s' password='~s'>~s</user>", [Username, Password, UserInfoString]).
+    io_lib:format("<user name='~s' ~s ~s</user>",
+		  [Username, PasswordStr, UserInfoString]).
+
+build_password_string({StoredKey, ServerKey, Salt, IterationCount}) ->
+    io_lib:format("password-format='scram'>"
+		  "<scram-hash stored-key='~s' server-key='~s' "
+		  "salt='~s' iteration-count='~w'/> ",
+		  [base64:encode_to_string(StoredKey),
+		   base64:encode_to_string(ServerKey),
+		   base64:encode_to_string(Salt),
+		   IterationCount]);
+build_password_string(Password) when is_list(Password) ->
+    io_lib:format("password-format='plaintext' password='~s'>", [Password]).
 
 %% @spec (InfoName::atom(), Username::string(), Host::string()) -> string()
 extract_user_info(roster, Username, Host) ->
-    case loaded_module(Host,[mod_roster_odbc,mod_roster]) of
-	{ok, M} ->
+    case loaded_module(Host, mod_roster) of
+	{ok, _DBType} ->
 	    From = To = jlib:make_jid(Username, Host, ""),
 	    SubelGet = {xmlelement, "query", [{"xmlns",?NS_ROSTER}], []},
 	    %%IQGet = #iq{type=get, xmlns=?NS_ROSTER, payload=SubelGet}, % this is for 3.0.0 version
 	    IQGet = {iq, "", get, ?NS_ROSTER, "" , SubelGet},
-	    Res = M:process_local_iq(From, To, IQGet),
+	    Res = mod_roster:process_local_iq(From, To, IQGet),
 	    %%[El] = Res#iq.payload, % this is for 3.0.0 version
 	    {iq, _, result, _, _, Els} = Res,
 	    case Els of
@@ -563,8 +592,8 @@ extract_user_info(roster, Username, Host) ->
     end;
 
 extract_user_info(offline, Username, Host) ->
-    case loaded_module(Host,[mod_offline,mod_offline_odbc]) of
-	{ok, mod_offline} ->
+    case loaded_module(Host, mod_offline) of
+	{ok, mnesia} ->
 	    Els = mnesia_pop_offline_messages([], Username, Host),
 	    case Els of
 		[] -> "";
@@ -572,30 +601,30 @@ extract_user_info(offline, Username, Host) ->
 		    OfEl = {xmlelement, "offline-messages", [], Els},
 		    exmpp_xml:document_to_list(OfEl)
 	    end;
-	{ok, mod_offline_odbc} ->
+	{ok, odbc} ->
 	    "";
 	_E ->
 	    ""
     end;
 
 extract_user_info(private, Username, Host) ->
-    case loaded_module(Host,[mod_private,mod_private_odbc]) of
-	{ok, mod_private} ->
+    case loaded_module(Host, mod_private) of
+	{ok, mnesia} ->
 	    get_user_private_mnesia(Username, Host);
-	{ok, mod_private_odbc} ->
+	{ok, odbc} ->
 	    "";
 	_E ->
 	    ""
     end;
 
 extract_user_info(vcard, Username, Host) ->
-    case loaded_module(Host,[mod_vcard, mod_vcard_odbc, mod_vcard_odbc]) of
-	{ok, M} ->
+    case loaded_module(Host, mod_vcard) of
+	{ok, _DBType} ->
 	    From = To = jlib:make_jid(Username, Host, ""),
 	    SubelGet = {xmlelement, "vCard", [{"xmlns",?NS_VCARD}], []},
 	    %%IQGet = #iq{type=get, xmlns=?NS_VCARD, payload=SubelGet}, % this is for 3.0.0 version
 	    IQGet = {iq, "", get, ?NS_VCARD, "" , SubelGet},
-	    Res = M:process_sm_iq(From, To, IQGet),
+	    Res = mod_vcard:process_sm_iq(From, To, IQGet),
 	    %%[El] = Res#iq.payload, % this is for 3.0.0 version
 	    {iq, _, result, _, _, Els} = Res,
 	    case Els of

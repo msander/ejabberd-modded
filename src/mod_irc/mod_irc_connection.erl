@@ -5,7 +5,7 @@
 %%% Created : 15 Feb 2003 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -30,7 +30,7 @@
 -behaviour(gen_fsm).
 
 %% External exports
--export([start_link/7, start/8, route_chan/4, route_nick/3]).
+-export([start_link/8, start/9, route_chan/4, route_nick/3]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -51,7 +51,7 @@
 -record(state, {socket, encoding, port, password,
 		queue, user, host, server, nick,
 		channels = dict:new(),
-		nickchannel,
+		nickchannel, mod,
 		inbuf = "", outbuf = ""}).
 
 %-define(DBGFSM, true).
@@ -65,13 +65,13 @@
 %%%----------------------------------------------------------------------
 %%% API
 %%%----------------------------------------------------------------------
-start(From, Host, ServerHost, Server, Username, Encoding, Port, Password) ->
+start(From, Host, ServerHost, Server, Username, Encoding, Port, Password, Mod) ->
     Supervisor = gen_mod:get_module_proc(ServerHost, ejabberd_mod_irc_sup),
     supervisor:start_child(
-      Supervisor, [From, Host, Server, Username, Encoding, Port, Password]).
+      Supervisor, [From, Host, Server, Username, Encoding, Port, Password, Mod]).
 
-start_link(From, Host, Server, Username, Encoding, Port, Password) ->
-    gen_fsm:start_link(?MODULE, [From, Host, Server, Username, Encoding, Port, Password],
+start_link(From, Host, Server, Username, Encoding, Port, Password, Mod) ->
+    gen_fsm:start_link(?MODULE, [From, Host, Server, Username, Encoding, Port, Password, Mod],
 		       ?FSMOPTS).
 
 %%%----------------------------------------------------------------------
@@ -85,9 +85,10 @@ start_link(From, Host, Server, Username, Encoding, Port, Password) ->
 %%          ignore                              |
 %%          {stop, StopReason}
 %%----------------------------------------------------------------------
-init([From, Host, Server, Username, Encoding, Port, Password]) ->
+init([From, Host, Server, Username, Encoding, Port, Password, Mod]) ->
     gen_fsm:send_event(self(), init),
     {ok, open_socket, #state{queue = queue:new(),
+                             mod = Mod,
 			     encoding = Encoding,
 			     port = Port,
 			     password = Password,
@@ -132,8 +133,6 @@ open_socket(init, StateData) ->
 			 StateData#state.nick,
 			 StateData#state.host,
 			 StateData#state.nick])),
-	    send_text(NewStateData,
-		      io_lib:format("CODEPAGE ~s\r\n", [StateData#state.encoding])),
 	    {next_state, wait_for_registration,
 	     NewStateData};
 	{error, Reason} ->
@@ -207,6 +206,31 @@ code_change(_OldVsn, StateName, StateData, _Extra) ->
 		StateData#state{outbuf = StateData#state.outbuf ++ S}
 	end).
 
+get_password_from_presence({xmlelement, "presence", _Attrs, Els}) ->
+	case lists:filter(fun(El) ->
+			case El of
+			    {xmlelement, "x", Attrs, _Els} ->
+				case xml:get_attr_s("xmlns", Attrs) of
+				    ?NS_MUC ->
+					true;
+				    _ ->
+					false
+				end;
+			    _ ->
+				false
+			end
+		end, Els) of
+	    [ElXMUC | _] ->
+		case xml:get_subtag(ElXMUC, "password") of
+		    {xmlelement, "password", _, _} = PasswordTag ->
+			{true, xml:get_tag_cdata(PasswordTag)};
+		    _ ->
+			false
+		end;
+	    _ ->
+	    false
+	end.
+
 %%----------------------------------------------------------------------
 %% Func: handle_info/3
 %% Returns: {next_state, NextStateName, NextStateData}          |
@@ -214,7 +238,7 @@ code_change(_OldVsn, StateName, StateData, _Extra) ->
 %%          {stop, Reason, NewStateData}
 %%----------------------------------------------------------------------
 handle_info({route_chan, Channel, Resource,
-	     {xmlelement, "presence", Attrs, _Els}},
+	     {xmlelement, "presence", Attrs, _Els} = Presence},
 	    StateName, StateData) ->
     NewStateData =
 	case xml:get_attr_s("type", Attrs) of
@@ -248,7 +272,12 @@ handle_info({route_chan, Channel, Resource,
 		    true ->
 			S1;
 		    _ ->
-			S2 = ?SEND(io_lib:format("JOIN #~s\r\n", [Channel])),
+			case get_password_from_presence(Presence) of
+				{true, Password} ->
+				S2 = ?SEND(io_lib:format("JOIN #~s ~s\r\n", [Channel, Password]));
+				_ ->
+				S2 = ?SEND(io_lib:format("JOIN #~s\r\n", [Channel]))
+			end,
 			S2#state{channels =
 				 dict:store(Channel, ?SETS:new(),
 					    S1#state.channels)}
@@ -498,6 +527,8 @@ handle_info({ircstring, [$: | String]}, wait_for_registration, StateData) ->
     {NewState, NewStateData} =
 	case Words of
 	    [_, "001" | _] ->
+		send_text(StateData,
+		      io_lib:format("CODEPAGE ~s\r\n", [StateData#state.encoding])),
 		{stream_established, StateData};
 	    [_, "433" | _] ->
 		{error,
@@ -625,7 +656,7 @@ handle_info({send_text, Text}, StateName, StateData) ->
     {next_state, StateName, StateData};
 handle_info({tcp, _Socket, Data}, StateName, StateData) ->
     Buf = StateData#state.inbuf ++ binary_to_list(Data),
-    {ok, Strings} = regexp:split([C || C <- Buf, C /= $\r], "\n"),
+    Strings = ejabberd_regexp:split([C || C <- Buf, C /= $\r], "\n"),
     ?DEBUG("strings=~p~n", [Strings]),
     NewBuf = process_lines(StateData#state.encoding, Strings),
     {next_state, StateName, StateData#state{inbuf = NewBuf}};
@@ -651,9 +682,9 @@ terminate(_Reason, _StateName, FullStateData) ->
 	      [{xmlcdata, "Server Connect Failed"}]},
 	     FullStateData}
 	end,
-    mod_irc:closed_connection(StateData#state.host,
-			      StateData#state.user,
-			      StateData#state.server),
+    (FullStateData#state.mod):closed_connection(StateData#state.host,
+                                                StateData#state.user,
+                                                StateData#state.server),
     bounce_messages("Server Connect Failed"),
     lists:foreach(
       fun(Chan) ->
@@ -797,7 +828,7 @@ process_channel_list_user(StateData, Chan, User) ->
 
 
 process_channel_topic(StateData, Chan, String) ->
-    {ok, Msg, _} = regexp:sub(String, ".*332[^:]*:", ""),
+    Msg = ejabberd_regexp:replace(String, ".*332[^:]*:", ""),
     Msg1 = filter_message(Msg),
     ejabberd_router:route(
       jlib:make_jid(
@@ -813,13 +844,9 @@ process_channel_topic_who(StateData, Chan, String) ->
     Words = string:tokens(String, " "),
     Msg1 = case Words of
 	       [_, "333", _, _Chan, Whoset , Timeset] ->
-		   case string:to_integer(Timeset) of
-		       {Unixtimeset, _Rest} ->
-			   "Topic for #" ++ Chan ++ " set by " ++ Whoset ++
-			       " at " ++ unixtime2string(Unixtimeset);
-		       _->
-			   "Topic for #" ++ Chan ++ " set by " ++ Whoset
-		   end;
+		   {Unixtimeset, _Rest} = string:to_integer(Timeset),
+                   "Topic for #" ++ Chan ++ " set by " ++ Whoset ++
+                       " at " ++ unixtime2string(Unixtimeset);
 	       [_, "333", _, _Chan, Whoset | _] ->
                    "Topic for #" ++ Chan ++ " set by " ++ Whoset;
 	       _ ->
@@ -835,7 +862,7 @@ process_channel_topic_who(StateData, Chan, String) ->
 
 
 error_nick_in_use(_StateData, String) ->
-    {ok, Msg, _} = regexp:sub(String, ".*433 +[^ ]* +", ""),
+    Msg = ejabberd_regexp:replace(String, ".*433 +[^ ]* +", ""),
     Msg1 = filter_message(Msg),
     {xmlelement, "error", [{"code", "409"}, {"type", "cancel"}],
      [{xmlelement, "conflict", [{"xmlns", ?NS_STANZAS}], []},
@@ -883,7 +910,7 @@ process_endofwhois(StateData, _String, Nick) ->
        [{xmlelement, "body", [], [{xmlcdata, "End of WHOIS"}]}]}).
 
 process_whois311(StateData, String, Nick, Ident, Irchost) ->
-    {ok, Fullname, _} = regexp:sub(String, ".*311[^:]*:", ""),
+    Fullname = ejabberd_regexp:replace(String, ".*311[^:]*:", ""),
     ejabberd_router:route(
       jlib:make_jid(lists:concat([Nick, "!", StateData#state.server]),
 		    StateData#state.host, ""),
@@ -895,7 +922,7 @@ process_whois311(StateData, String, Nick, Ident, Irchost) ->
 			Ident, "@" , Irchost, " : " , Fullname])}]}]}).
 
 process_whois312(StateData, String, Nick, Ircserver) ->
-    {ok, Ircserverdesc, _} = regexp:sub(String, ".*312[^:]*:", ""),
+    Ircserverdesc = ejabberd_regexp:replace(String, ".*312[^:]*:", ""),
     ejabberd_router:route(
       jlib:make_jid(lists:concat([Nick, "!", StateData#state.server]),
 		    StateData#state.host, ""),
@@ -906,7 +933,7 @@ process_whois312(StateData, String, Nick, Ircserver) ->
 				   Ircserver, " : ", Ircserverdesc])}]}]}).
 
 process_whois319(StateData, String, Nick) ->
-    {ok, Chanlist, _} = regexp:sub(String, ".*319[^:]*:", ""),
+    Chanlist = ejabberd_regexp:replace(String, ".*319[^:]*:", ""),
     ejabberd_router:route(
       jlib:make_jid(lists:concat([Nick, "!", StateData#state.server]),
 		    StateData#state.host, ""),
@@ -920,7 +947,7 @@ process_whois319(StateData, String, Nick) ->
 
 process_chanprivmsg(StateData, Chan, From, String) ->
     [FromUser | _] = string:tokens(From, "!"),
-    {ok, Msg, _} = regexp:sub(String, ".*PRIVMSG[^:]*:", ""),
+    Msg = ejabberd_regexp:replace(String, ".*PRIVMSG[^:]*:", ""),
     Msg1 = case Msg of
 	       [1, $A, $C, $T, $I, $O, $N, $  | Rest] ->
 		   "/me " ++ Rest;
@@ -939,7 +966,7 @@ process_chanprivmsg(StateData, Chan, From, String) ->
 
 process_channotice(StateData, Chan, From, String) ->
     [FromUser | _] = string:tokens(From, "!"),
-    {ok, Msg, _} = regexp:sub(String, ".*NOTICE[^:]*:", ""),
+    Msg = ejabberd_regexp:replace(String, ".*NOTICE[^:]*:", ""),
     Msg1 = case Msg of
 	       [1, $A, $C, $T, $I, $O, $N, $  | Rest] ->
 		   "/me " ++ Rest;
@@ -959,7 +986,7 @@ process_channotice(StateData, Chan, From, String) ->
 
 process_privmsg(StateData, _Nick, From, String) ->
     [FromUser | _] = string:tokens(From, "!"),
-    {ok, Msg, _} = regexp:sub(String, ".*PRIVMSG[^:]*:", ""),
+    Msg = ejabberd_regexp:replace(String, ".*PRIVMSG[^:]*:", ""),
     Msg1 = case Msg of
 	       [1, $A, $C, $T, $I, $O, $N, $  | Rest] ->
 		   "/me " ++ Rest;
@@ -977,7 +1004,7 @@ process_privmsg(StateData, _Nick, From, String) ->
 
 process_notice(StateData, _Nick, From, String) ->
     [FromUser | _] = string:tokens(From, "!"),
-    {ok, Msg, _} = regexp:sub(String, ".*NOTICE[^:]*:", ""),
+    Msg = ejabberd_regexp:replace(String, ".*NOTICE[^:]*:", ""),
     Msg1 = case Msg of
 	       [1, $A, $C, $T, $I, $O, $N, $  | Rest] ->
 		   "/me " ++ Rest;
@@ -1020,7 +1047,7 @@ process_userinfo(StateData, _Nick, From) ->
 
 process_topic(StateData, Chan, From, String) ->
     [FromUser | _] = string:tokens(From, "!"),
-    {ok, Msg, _} = regexp:sub(String, ".*TOPIC[^:]*:", ""),
+    Msg = ejabberd_regexp:replace(String, ".*TOPIC[^:]*:", ""),
     Msg1 = filter_message(Msg),
     ejabberd_router:route(
       jlib:make_jid(lists:concat([Chan, "%", StateData#state.server]),
@@ -1034,7 +1061,7 @@ process_topic(StateData, Chan, From, String) ->
 
 process_part(StateData, Chan, From, String) ->
     [FromUser | FromIdent] = string:tokens(From, "!"),
-    {ok, Msg, _} = regexp:sub(String, ".*PART[^:]*:", ""),
+    Msg = ejabberd_regexp:replace(String, ".*PART[^:]*:", ""),
     Msg1 = filter_message(Msg),
     ejabberd_router:route(
       jlib:make_jid(lists:concat([Chan, "%", StateData#state.server]),
@@ -1063,7 +1090,7 @@ process_part(StateData, Chan, From, String) ->
 process_quit(StateData, From, String) ->
     [FromUser | FromIdent] = string:tokens(From, "!"),
 
-    {ok, Msg, _} = regexp:sub(String, ".*QUIT[^:]*:", ""),
+    Msg = ejabberd_regexp:replace(String, ".*QUIT[^:]*:", ""),
     Msg1 = filter_message(Msg),
     %%NewChans =
 	dict:map(
@@ -1219,7 +1246,7 @@ process_error(StateData, String) ->
       end, dict:fetch_keys(StateData#state.channels)).
 
 error_unknown_num(_StateData, String, Type) ->
-    {ok, Msg, _} = regexp:sub(String, ".*[45][0-9][0-9] +[^ ]* +", ""),
+    Msg = ejabberd_regexp:replace(String, ".*[45][0-9][0-9] +[^ ]* +", ""),
     Msg1 = filter_message(Msg),
     {xmlelement, "error", [{"code", "500"}, {"type", Type}],
      [{xmlelement, "undefined-condition", [{"xmlns", ?NS_STANZAS}], []},
@@ -1317,25 +1344,17 @@ filter_message(Msg) ->
       end, filter_mirc_colors(Msg)).
 
 filter_mirc_colors(Msg) ->
-    case regexp:gsub(Msg, "(\\003[0-9]+)(,[0-9]+)?", "") of
-	{ok, Msg2, _} ->
-	    Msg2;
-	_ ->
-	    Msg
-    end.
+    ejabberd_regexp:greplace(Msg, "(\\003[0-9]+)(,[0-9]+)?", "").
 
 unixtime2string(Unixtime) ->
     Secs = Unixtime + calendar:datetime_to_gregorian_seconds(
 			{{1970, 1, 1}, {0,0,0}}),
-    case calendar:universal_time_to_local_time(
-	   calendar:gregorian_seconds_to_datetime(Secs)) of
-	{{Year, Month, Day}, {Hour, Minute, Second}} ->
-	    lists:flatten(
-	      io_lib:format("~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w",
-			    [Year, Month, Day, Hour, Minute, Second]));
-	_->
-	    "0000-00-00 00:00:00"
-    end.
+    {{Year, Month, Day}, {Hour, Minute, Second}} =
+        calendar:universal_time_to_local_time(
+          calendar:gregorian_seconds_to_datetime(Secs)),
+    lists:flatten(
+      io_lib:format("~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w",
+                    [Year, Month, Day, Hour, Minute, Second])).
 
 toupper([C | Cs]) ->
     if

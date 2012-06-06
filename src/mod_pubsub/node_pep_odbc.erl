@@ -11,12 +11,12 @@
 %%% under the License.
 %%% 
 %%% The Initial Developer of the Original Code is ProcessOne.
-%%% Portions created by ProcessOne are Copyright 2006-2011, ProcessOne
+%%% Portions created by ProcessOne are Copyright 2006-2012, ProcessOne
 %%% All Rights Reserved.''
-%%% This software is copyright 2006-2011, ProcessOne.
+%%% This software is copyright 2006-2012, ProcessOne.
 %%%
 %%%
-%%% @copyright 2006-2011 ProcessOne
+%%% @copyright 2006-2012 ProcessOne
 %%% @author Christophe Romain <christophe.romain@process-one.net>
 %%%   [http://www.process-one.net/]
 %%% @version {@vsn}, {@date} {@time}
@@ -216,7 +216,7 @@ get_entity_subscriptions(_Host, Owner) ->
 	{selected, ["host", "node", "type", "nodeid", "jid", "subscriptions"], RItems} ->
 	    lists:map(fun({H, N, T, I, J, S}) ->
 		O = node_hometree_odbc:decode_jid(H),
-		Node = nodetree_odbc:raw_to_node(O, {N, "", T, I}),
+		Node = nodetree_tree_odbc:raw_to_node(O, {N, "", T, I}),
 		{Node, node_hometree_odbc:decode_subscriptions(S), node_hometree_odbc:decode_jid(J)}
 	    end, RItems);
 	_ ->
@@ -250,7 +250,7 @@ get_entity_subscriptions_for_send_last(_Host, Owner) ->
 	{selected, ["host", "node", "type", "nodeid", "jid", "subscriptions"], RItems} ->
 	    lists:map(fun({H, N, T, I, J, S}) ->
 		O = node_hometree_odbc:decode_jid(H),
-		Node = nodetree_odbc:raw_to_node(O, {N, "", T, I}),
+		Node = nodetree_tree_odbc:raw_to_node(O, {N, "", T, I}),
 		{Node, node_hometree_odbc:decode_subscriptions(S), node_hometree_odbc:decode_jid(J)}
 	    end, RItems);
 	_ ->

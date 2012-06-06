@@ -5,7 +5,7 @@
 %%% Created :  8 Mar 2003 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -34,7 +34,7 @@
 -record(state, {check_password}).
 
 start(_Opts) ->
-    cyrsasl:register_mechanism("PLAIN", ?MODULE, false),
+    cyrsasl:register_mechanism("PLAIN", ?MODULE, plain),
     ok.
 
 stop() ->

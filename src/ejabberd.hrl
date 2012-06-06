@@ -1,6 +1,6 @@
 %%%----------------------------------------------------------------------
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -36,6 +36,9 @@
 -define(S2STIMEOUT, 600000).
 
 %%-define(DBGFSM, true).
+
+-record(scram, {storedkey, serverkey, salt, iterationcount}).
+-define(SCRAM_DEFAULT_ITERATION_COUNT, 4096).
 
 %% ---------------------------------
 %% Logging mechanism

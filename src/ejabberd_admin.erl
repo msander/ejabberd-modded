@@ -5,7 +5,7 @@
 %%% Created :  7 May 2006 by Mickael Remond <mremond@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -85,6 +85,10 @@ commands() ->
 			args = [], result = {res, rescode}},
      #ejabberd_commands{name = stop_kindly, tags = [server],
 			desc = "Inform users and rooms, wait, and stop the server",
+			longdesc = "Provide the delay in seconds, and the "
+			    "announcement quoted, for example: \n"
+			    "ejabberdctl stop_kindly 60 "
+			    "\\\"The server will stop in one minute.\\\"",
 			module = ?MODULE, function = stop_kindly,
 			args = [{delay, integer}, {announcement, string}],
 			result = {res, rescode}},
@@ -271,7 +275,7 @@ stop_kindly(DelaySeconds, AnnouncementText) ->
 		  - TimestampStart,
 	      io:format("[~p/~p ~ps] ~s... ",
 			[NumberThis, NumberLast, SecondsDiff, Desc]),
-	      Result = apply(Mod, Func, Args),
+	      Result = (catch apply(Mod, Func, Args)),
 	      io:format("~p~n", [Result]),
 	      NumberThis+1
       end,
@@ -299,14 +303,15 @@ update_list() ->
     [atom_to_list(Beam) || Beam <- UpdatedBeams].
 
 update("all") ->
-    [update_module(ModStr) || ModStr <- update_list()];
+    [update_module(ModStr) || ModStr <- update_list()],
+    {ok, []};
 update(ModStr) ->
     update_module(ModStr).
 
 update_module(ModuleNameString) ->
     ModuleName = list_to_atom(ModuleNameString),
     case ejabberd_update:update([ModuleName]) of
-          {ok, Res} -> {ok, io_lib:format("Updated: ~p", [Res])};
+          {ok, _Res} -> {ok, []};
           {error, Reason} -> {error, Reason}
     end.
 
@@ -368,13 +373,16 @@ import_dir(Path) ->
 %%%
 
 delete_expired_messages() ->
-    {atomic, ok} = mod_offline:remove_expired_messages(),
-    ok.
+    lists:foreach(
+      fun(Host) ->
+              {atomic, ok} = mod_offline:remove_expired_messages(Host)
+      end, ?MYHOSTS).
 
 delete_old_messages(Days) ->
-    {atomic, _} = mod_offline:remove_old_messages(Days),
-    ok.
-
+    lists:foreach(
+      fun(Host) ->
+              {atomic, _} = mod_offline:remove_old_messages(Days, Host)
+      end, ?MYHOSTS).
 
 %%%
 %%% Mnesia management
@@ -434,7 +442,7 @@ restore(Path) ->
 %% Obsolete tables or tables created by module who are no longer used are not
 %% restored and are ignored.
 keep_tables() ->
-    lists:flatten([acl, passwd, config, local_config, disco_publish,
+    lists:flatten([acl, passwd, config, local_config,
 		   keep_modules_tables()]).
 
 %% Returns the list of modules tables in use, according to the list of actually

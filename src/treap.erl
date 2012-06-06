@@ -5,7 +5,7 @@
 %%% Created : 22 Apr 2008 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2011   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2012   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -63,8 +63,6 @@ insert1({HashKey1, Priority1, Value1, Left, Right} = Tree,
 	    insert1(delete_root(Tree), HashKey, Priority, Value)
     end.
 
-heapify(nil) ->
-    nil;
 heapify({_HashKey, _Priority, _Value, nil, nil} = Tree) ->
     Tree;
 heapify({HashKey, Priority, Value,

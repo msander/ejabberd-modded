@@ -11,12 +11,12 @@
 %%% under the License.
 %%% 
 %%% The Initial Developer of the Original Code is ProcessOne.
-%%% Portions created by ProcessOne are Copyright 2006-2011, ProcessOne
+%%% Portions created by ProcessOne are Copyright 2006-2012, ProcessOne
 %%% All Rights Reserved.''
-%%% This software is copyright 2006-2011, ProcessOne.
+%%% This software is copyright 2006-2012, ProcessOne.
 %%%
 %%%
-%%% @copyright 2006-2011 ProcessOne
+%%% @copyright 2006-2012 ProcessOne
 %%% @author Christophe Romain <christophe.romain@process-one.net>
 %%%   [http://www.process-one.net/]
 %%% @version {@vsn}, {@date} {@time}
@@ -136,10 +136,7 @@ create_node_permission(Host, ServerHost, _Node, _ParentNode, Owner, Access) ->
     {result, Allowed}.
 
 create_node(NodeId, Owner) ->
-    case node_hometree:create_node(NodeId, Owner) of
-	{result, _} -> {result, []};
-	Error -> Error
-    end.
+    node_hometree:create_node(NodeId, Owner).
 
 delete_node(Removed) ->
     case node_hometree:delete_node(Removed) of
